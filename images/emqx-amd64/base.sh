@@ -48,19 +48,25 @@ apt-get -y install apt-fast
 apt-get -y install curl gnupg lsb-release jq git unzip curl wget net-tools dnsutils
 apt-get -y install build-essential autoconf automake cmake
 apt-get -y install --no-install-recommends python3 python3-pip python3-venv python-is-python3
+
+# docker
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 echo deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable > /etc/apt/sources.list.d/docker.list
 apt-get -y update
 apt-get -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-systemctl enable --now containerd.service
-systemctl enable --now docker.service
-usermod -a -G docker ubuntu
-
 cat << EOF > /usr/bin/docker-compose
 #!/bin/sh
 docker compose "\$@"
 EOF
 chmod +x /usr/bin/docker-compose
+systemctl enable --now containerd.service
+systemctl enable --now docker.service
+usermod -a -G docker ubuntu
+cat << EOF >> /etc/docker/daemon.json
+{
+   "data-root": "/data/docker"
+}
+EOF
 
 curl -f https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb -o amazon-cloudwatch-agent.deb
 dpkg -i amazon-cloudwatch-agent.deb
@@ -87,8 +93,24 @@ systemctl disable apt-daily-upgrade.service
 
 apt-get purge unattended-upgrades
 
-# cache builder image
-docker pull ghcr.io/emqx/emqx-builder/5.1-3:1.14.5-25.3.2-1-ubuntu22.04
+cat  <<EOF >/etc/systemd/system/data.mount
+[Unit]
+Description=Mount EBS Volume
+After=network.target
+Before=docker.service
+
+[Mount]
+What=/dev/nvme1n1
+Where=/data
+Type=ext4
+Options=noatime
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable data.mount
 
 # clean up
 journalctl --rotate

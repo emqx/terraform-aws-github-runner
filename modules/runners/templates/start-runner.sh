@@ -75,7 +75,7 @@ fi
 echo "Get GH Runner config from AWS SSM"
 config=$(aws ssm get-parameter --name "$token_path"/"$instance_id" --with-decryption --region "$region" | jq -r ".Parameter | .Value")
 while [[ -z "$config" ]]; do
-  echo "Waiting for GH Runner config to become available in AWS SSM"
+  echo "Waiting for GH Runner config parameter $token_path/$instance_id to become available in AWS SSM"
   sleep 1
   config=$(aws ssm get-parameter --name "$token_path"/"$instance_id" --with-decryption --region "$region" | jq -r ".Parameter | .Value")
 done

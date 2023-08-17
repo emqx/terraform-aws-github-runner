@@ -32,3 +32,11 @@ resource "aws_ssm_parameter" "token_path" {
   value = "${var.ssm_paths.root}/${var.ssm_paths.tokens}"
   tags  = local.tags
 }
+
+resource "aws_ssm_parameter" "runner_group" {
+  name  = "${var.ssm_paths.root}/${var.ssm_paths.config}/runner-group/Default"
+  type  = "String"
+  value = "1"
+  tags  = local.tags
+}
+
