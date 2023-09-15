@@ -1,4 +1,4 @@
-import { DefaultTargetCapacityType, SpotAllocationStrategy } from '@aws-sdk/client-ec2';
+import { DefaultTargetCapacityType, SpotAllocationStrategy, Tag } from '@aws-sdk/client-ec2';
 
 export type RunnerType = 'Org' | 'Repo';
 
@@ -39,4 +39,5 @@ export interface RunnerInputParameters {
   };
   numberOfRunners?: number;
   amiIdSsmParameterName?: string;
+  tags?: Tag[];
 }

@@ -1,6 +1,6 @@
 variable "github_app" {
   description = "GitHub for API usages."
-  sensitive = true
+  sensitive   = true
 
   type = object({
     id         = string

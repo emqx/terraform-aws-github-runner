@@ -6,7 +6,7 @@ export DEBIAN_FRONTEND=noninteractive
 echo "APT::Acquire::Retries \"10\";" > /etc/apt/apt.conf.d/80-retries
 
 # Configure apt to always assume Y
-echo "APT::Get::Assume-Yes \"true\";" > /etc/apt/apt.conf.d/90assumeyes
+echo "APT::Get::Assume-Yes \"true\";" > /etc/apt/apt.conf.d/90-assumeyes
 
 echo 'session required pam_limits.so' >> /etc/pam.d/common-session
 echo 'session required pam_limits.so' >> /etc/pam.d/common-session-noninteractive
@@ -21,10 +21,10 @@ echo '* hard nofile 65536' >> /etc/security/limits.conf
 echo '* soft stack 16384' >> /etc/security/limits.conf
 echo '* hard stack 16384' >> /etc/security/limits.conf
 
-cat << EOF > /var/lib/cloud/scripts/per-instance/01-mount-data.sh
-#!/bin/bash -e
+cat << EOF > /var/lib/cloud/scripts/per-boot/01-mount-data.sh
+#!/bin/bash -ex
 if [ -b /dev/nvme1n1 ]; then
-    logger -t "cloud-init" "Found extra data volume, format and mount to /data"
+    echo "Found extra data volume, format and mount to /data"
     mkfs.ext4 -L data /dev/nvme1n1
     mkdir -p /data
     mount -L data /data
@@ -34,10 +34,10 @@ if [ -b /dev/nvme1n1 ]; then
     chown -R ubuntu:ubuntu /data/_work
     rm -rf /opt/actions-runner/_work
     ln -s /data/_work /opt/actions-runner/
-    systemctl restart docker
+    systemctl restart docker.service
 fi
 EOF
-chmod +x /var/lib/cloud/scripts/per-instance/01-mount-data.sh
+chmod +x /var/lib/cloud/scripts/per-boot/01-mount-data.sh
 
 apt-get -y update
 apt-get -y install apt-transport-https ca-certificates software-properties-common
@@ -68,12 +68,24 @@ cat << EOF >> /etc/docker/daemon.json
 }
 EOF
 
-curl -f https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb -o amazon-cloudwatch-agent.deb
-dpkg -i amazon-cloudwatch-agent.deb
-systemctl restart amazon-cloudwatch-agent
-curl -f https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o awscliv2.zip
-unzip -q awscliv2.zip
-./aws/install
+# redis
+curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" > /etc/apt/sources.list.d/redis.list
+apt-get -y update && apt-get -y install redis
+
+wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb -O /tmp/amazon-cloudwatch-agent.deb
+apt install /tmp/amazon-cloudwatch-agent.deb
+
+wget https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -O /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install
+
+wget https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb -O /tmp/session-manager-plugin.deb
+apt install /tmp/session-manager-plugin.deb
+
+wget https://github.com/cli/cli/releases/download/v2.33.0/gh_2.33.0_linux_amd64.deb -O /tmp/gh.deb
+apt install /tmp/gh.deb
 
 wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /tmp/yq
 mv /tmp/yq /usr/bin/yq
@@ -92,25 +104,6 @@ systemctl disable apt-daily-upgrade.timer
 systemctl disable apt-daily-upgrade.service
 
 apt-get purge unattended-upgrades
-
-cat  <<EOF >/etc/systemd/system/data.mount
-[Unit]
-Description=Mount EBS Volume
-After=network.target
-Before=docker.service
-
-[Mount]
-What=/dev/nvme1n1
-Where=/data
-Type=ext4
-Options=noatime
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable data.mount
 
 # clean up
 journalctl --rotate

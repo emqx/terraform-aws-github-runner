@@ -3,7 +3,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Example = local.environment
+      Env = local.environment
     }
   }
 }

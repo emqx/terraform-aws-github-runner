@@ -6,6 +6,7 @@ import {
   EC2Client,
   FleetLaunchTemplateOverridesRequest,
   TerminateInstancesCommand,
+  Tag,
 } from '@aws-sdk/client-ec2';
 import { createChildLogger } from '@terraform-aws-github-runner/aws-powertools-util';
 import { getParameter } from '@terraform-aws-github-runner/aws-ssm-util';
@@ -144,7 +145,7 @@ export async function createRunner(runnerParameters: Runners.RunnerInputParamete
   }
 
   const numberOfRunners = runnerParameters.numberOfRunners ? runnerParameters.numberOfRunners : 1;
-  const tags = [
+  const tags: Tag[] = [
     { Key: 'ghr:Application', Value: 'github-action-runner' },
     { Key: 'ghr:created_by', Value: numberOfRunners === 1 ? 'scale-up-lambda' : 'pool-lambda' },
     { Key: 'Type', Value: runnerParameters.runnerType },
@@ -179,7 +180,7 @@ export async function createRunner(runnerParameters: Runners.RunnerInputParamete
       TagSpecifications: [
         {
           ResourceType: 'instance',
-          Tags: tags,
+          Tags: [...tags, ...(runnerParameters.tags ?? [])]
         },
         {
           ResourceType: 'volume',
