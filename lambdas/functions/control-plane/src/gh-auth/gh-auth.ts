@@ -10,20 +10,40 @@ import {
 import { OctokitOptions } from '@octokit/core/dist-types/types';
 import { request } from '@octokit/request';
 import { Octokit } from '@octokit/rest';
+import { throttling } from '@octokit/plugin-throttling';
 import { createChildLogger } from '@terraform-aws-github-runner/aws-powertools-util';
 import { getParameter } from '@terraform-aws-github-runner/aws-ssm-util';
 
 const logger = createChildLogger('gh-auth');
+const ThrottledOctokit = Octokit.plugin(throttling);
 
 export async function createOctoClient(token: string, ghesApiUrl = ''): Promise<Octokit> {
   const ocktokitOptions: OctokitOptions = {
     auth: token,
+    throttle: {
+      onRateLimit: (retryAfter, options: any, octokit, retryCount) => {
+        logger.warn(
+          `Request quota exhausted for request ${options.method} ${options.url}`,
+        );
+        if (retryCount < 5) {
+          // retry up to 5 times
+          logger.info(`Retrying after ${retryAfter} seconds.`);
+          return true;
+        }
+      },
+      onSecondaryRateLimit: (retryAfter, options: any, octokit) => {
+        // does not retry, only logs a warning
+        logger.warn(
+          `SecondaryRateLimit detected for request ${options.method} ${options.url}`,
+        );
+      },
+    },
   };
   if (ghesApiUrl) {
     ocktokitOptions.baseUrl = ghesApiUrl;
     ocktokitOptions.previews = ['antiope'];
   }
-  return new Octokit(ocktokitOptions);
+  return new ThrottledOctokit(ocktokitOptions);
 }
 
 export async function createGithubAppAuth(
