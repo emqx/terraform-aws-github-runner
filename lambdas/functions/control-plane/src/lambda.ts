@@ -6,6 +6,7 @@ import { PoolEvent, adjust } from './pool/pool';
 import ScaleError from './scale-runners/ScaleError';
 import { scaleDown } from './scale-runners/scale-down';
 import { scaleUp } from './scale-runners/scale-up';
+import { checkPending } from './scale-runners/check-pending';
 
 export async function scaleUpHandler(event: SQSEvent, context: Context): Promise<void> {
   setContext(context, 'lambda.ts');
@@ -33,6 +34,17 @@ export async function scaleDownHandler(event: unknown, context: Context): Promis
 
   try {
     await scaleDown();
+  } catch (e) {
+    logger.error(`${(e as Error).message}`, { error: e as Error });
+  }
+}
+
+export async function checkPendingHandler(event: unknown, context: Context): Promise<void> {
+  setContext(context, 'lambda.ts');
+  logger.logEventIfEnabled(event);
+
+  try {
+    await checkPending();
   } catch (e) {
     logger.error(`${(e as Error).message}`, { error: e as Error });
   }

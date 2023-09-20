@@ -202,6 +202,12 @@ variable "scale_down_schedule_expression" {
   default     = "cron(*/5 * * * ? *)"
 }
 
+variable "check_pending_schedule_expression" {
+  description = "Scheduler expression to check every x for check pending."
+  type        = string
+  default     = "cron(*/1 * * * ? *)"
+}
+
 variable "minimum_running_time_in_minutes" {
   description = "The time an ec2 action runner should be running at minimum before terminated if non busy. If not set the default is calculated based on the OS."
   type        = number
@@ -225,6 +231,15 @@ variable "runner_group_name" {
   default     = "Default"
 }
 
+variable "sqs_workflow_job_queue" {
+  description = "SQS queue to monitor github events."
+  type = object({
+    id  = string
+    arn = string
+  })
+  default = null
+}
+
 variable "lambda_zip" {
   description = "File location of the lambda zip file."
   type        = string
@@ -245,6 +260,12 @@ variable "scale_up_reserved_concurrent_executions" {
 
 variable "lambda_timeout_scale_up" {
   description = "Time out for the scale up lambda in seconds."
+  type        = number
+  default     = 60
+}
+
+variable "lambda_timeout_check_pending" {
+  description = "Time out for the check pending lambda in seconds."
   type        = number
   default     = 60
 }

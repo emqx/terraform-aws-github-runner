@@ -1,4 +1,5 @@
 import { Tag } from '@aws-sdk/client-ec2';
+import { SQS, SendMessageCommandInput } from '@aws-sdk/client-sqs';
 import { Octokit } from '@octokit/rest';
 import { addPersistentContextToChildLogger, createChildLogger } from '@terraform-aws-github-runner/aws-powertools-util';
 import { getParameter, putParameter } from '@terraform-aws-github-runner/aws-ssm-util';
@@ -130,7 +131,10 @@ async function getInstallationId(
       ).data.id;
 }
 
-async function isJobQueued(githubInstallationClient: Octokit, payload: ActionRequestMessage): Promise<boolean> {
+async function isJobQueued(
+  githubInstallationClient: Octokit,
+  payload: ActionRequestMessage,
+  redis: RedisClient | undefined): Promise<boolean> {
   let isQueued = false;
   if (payload.eventType === 'workflow_job') {
     const job = await githubInstallationClient.actions.getJobForWorkflowRun({
@@ -139,8 +143,26 @@ async function isJobQueued(githubInstallationClient: Octokit, payload: ActionReq
       repo: payload.repositoryName,
     });
     isQueued = job.data.status === 'queued';
-    if (!isQueued) {
+    if (isQueued) {
+      if (redis) {
+        await redis
+          .multi()
+          .set(`workflow:${payload.id}:ts`, Date.now().toString())
+          .set(`workflow:${payload.id}:payload`, JSON.stringify(payload))
+          .set(`workflow:${payload.id}:requeue_count`, 0)
+          .exec();
+      }
+    }
+    else {
       logger.warn(`Job ${payload.id} is ${job.data.status}: ${job.data.name}. A new runner instance will NOT be created for this job. See ${job.data.html_url}.`);
+      if (redis) {
+        await redis
+          .multi()
+          .del(`workflow:${payload.id}:ts`)
+          .del(`workflow:${payload.id}:payload`)
+          .del(`workflow:${payload.id}:requeue_count`)
+          .exec();
+      }
     }
   } else {
     throw Error(`Event ${payload.eventType} is not supported`);
@@ -285,7 +307,7 @@ export async function scaleUp(eventSource: string, payload: ActionRequestMessage
   const installationId = await getInstallationId(ghesApiUrl, enableOrgLevel, payload);
   const ghAuth = await createGithubInstallationAuth(installationId, ghesApiUrl);
   const githubInstallationClient = await createOctoClient(ghAuth.token, ghesApiUrl);
-  if (!enableJobQueuedCheck || (await isJobQueued(githubInstallationClient, payload))) {
+  if (!enableJobQueuedCheck || (await isJobQueued(githubInstallationClient, payload, redis))) {
     const currentRunners = await listEC2Runners({
       environment,
       runnerType,

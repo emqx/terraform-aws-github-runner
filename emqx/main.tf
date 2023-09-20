@@ -73,8 +73,8 @@ module "runners" {
   runners_maximum_count                 = 256
   scale_down_schedule_expression        = "cron(* * * * ? *)"
   logging_retention_in_days             = 7
-  enable_user_data_debug_logging_runner = true
-  log_level                             = "debug"
+  # enable_user_data_debug_logging_runner = true
+  # log_level                             = "debug"
 
   # prefix GitHub runners with the environment name
   runner_name_prefix = "${local.environment}_"

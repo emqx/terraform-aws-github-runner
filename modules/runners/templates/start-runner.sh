@@ -83,8 +83,7 @@ info_arch=$(uname -p)
 info_os=$(( lsb_release -ds || cat /etc/*release || uname -om ) 2>/dev/null | head -n1 | cut -d "=" -f2- | tr -d '"')
 
 cat > /opt/actions-runner/.setup_info <<EOL
-[
-  {
+[{
     "group": "Operating System",
     "detail": "Distribution: $info_os\nArchitecture: $info_arch"
   },
@@ -95,10 +94,21 @@ cat > /opt/actions-runner/.setup_info <<EOL
   {
     "group": "EC2",
     "detail": "Instance type: $instance_type\nAvailability zone: $availability_zone"
-  }
-]
+  }]
 EOL
 
+JOB_STARTED_HOOK=/opt/actions-runner/job-started-hook.sh
+JOB_STARTED_HOOK_LOG=/opt/actions-runner/job-started-hook.log
+cat > $JOB_STARTED_HOOK <<EOF
+#!/bin/bash -x
+redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:ts" 2>&1 >> $JOB_STARTED_HOOK_LOG
+redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:payload" 2>&1 >> $JOB_STARTED_HOOK_LOG
+redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:requeue_count" 2>&1 >> $JOB_STARTED_HOOK_LOG
+EOF
+
+chmod a+x $JOB_STARTED_HOOK
+
+echo "ACTIONS_RUNNER_HOOK_JOB_STARTED=$JOB_STARTED_HOOK" >> /opt/actions-runner/.env
 
 ## Start the runner
 echo "Starting runner after $(awk '{print int($1/3600)":"int(($1%3600)/60)":"int($1%60)}' /proc/uptime)"

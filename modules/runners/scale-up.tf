@@ -106,6 +106,16 @@ resource "aws_iam_role_policy" "scale_up" {
   })
 }
 
+resource "aws_iam_role_policy" "scale_up_workflow_job_sqs" {
+  count = var.sqs_workflow_job_queue != null ? 1 : 0
+  name  = "${var.prefix}-lambda-scale-up-publish-workflow-job-sqs-policy"
+  role  = aws_iam_role.scale_up.name
+
+  policy = templatefile("${path.module}/policies/lambda-publish-sqs-policy.json", {
+    sqs_resource_arns = jsonencode([var.sqs_workflow_job_queue.arn])
+    kms_key_arn       = var.kms_key_arn != null ? var.kms_key_arn : ""
+  })
+}
 
 resource "aws_iam_role_policy" "scale_up_logging" {
   name = "${var.prefix}-lambda-logging"
