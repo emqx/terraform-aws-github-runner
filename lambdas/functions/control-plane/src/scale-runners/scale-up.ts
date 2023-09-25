@@ -1,6 +1,9 @@
+import { Tag } from '@aws-sdk/client-ec2';
+import { SQS, SendMessageCommandInput } from '@aws-sdk/client-sqs';
 import { Octokit } from '@octokit/rest';
 import { addPersistentContextToChildLogger, createChildLogger } from '@terraform-aws-github-runner/aws-powertools-util';
 import { getParameter, putParameter } from '@terraform-aws-github-runner/aws-ssm-util';
+import { createClient } from 'redis';
 import yn from 'yn';
 
 import { createGithubAppAuth, createGithubInstallationAuth, createOctoClient } from '../gh-auth/gh-auth';
@@ -9,6 +12,8 @@ import { RunnerInputParameters } from './../aws/runners.d';
 import ScaleError from './ScaleError';
 
 const logger = createChildLogger('scale-up');
+
+type RedisClient = ReturnType<typeof createClient>;
 
 export interface RunnerGroup {
   name: string;
@@ -50,6 +55,7 @@ interface CreateEC2RunnerConfig {
   ec2instanceCriteria: RunnerInputParameters['ec2instanceCriteria'];
   numberOfRunners?: number;
   amiIdSsmParameterName?: string;
+  tags?: Tag[];
 }
 
 function generateRunnerServiceConfig(githubRunnerConfig: CreateGitHubRunnerConfig, token: string) {
@@ -125,20 +131,41 @@ async function getInstallationId(
       ).data.id;
 }
 
-async function isJobQueued(githubInstallationClient: Octokit, payload: ActionRequestMessage): Promise<boolean> {
+async function isJobQueued(
+  githubInstallationClient: Octokit,
+  payload: ActionRequestMessage,
+  redis: RedisClient | undefined): Promise<boolean> {
   let isQueued = false;
   if (payload.eventType === 'workflow_job') {
-    const jobForWorkflowRun = await githubInstallationClient.actions.getJobForWorkflowRun({
+    const job = await githubInstallationClient.actions.getJobForWorkflowRun({
       job_id: payload.id,
       owner: payload.repositoryOwner,
       repo: payload.repositoryName,
     });
-    isQueued = jobForWorkflowRun.data.status === 'queued';
+    isQueued = job.data.status === 'queued';
+    if (isQueued) {
+      if (redis) {
+        await redis
+          .multi()
+          .set(`workflow:${payload.id}:ts`, Date.now().toString())
+          .set(`workflow:${payload.id}:payload`, JSON.stringify(payload))
+          .set(`workflow:${payload.id}:requeue_count`, 0)
+          .exec();
+      }
+    }
+    else {
+      logger.warn(`Job ${payload.id} is ${job.data.status}: ${job.data.name}. A new runner instance will NOT be created for this job. See ${job.data.html_url}.`);
+      if (redis) {
+        await redis
+          .multi()
+          .del(`workflow:${payload.id}:ts`)
+          .del(`workflow:${payload.id}:payload`)
+          .del(`workflow:${payload.id}:requeue_count`)
+          .exec();
+      }
+    }
   } else {
     throw Error(`Event ${payload.eventType} is not supported`);
-  }
-  if (!isQueued) {
-    logger.warn(`Job not queued in GitHub. A new runner instance will NOT be created for this job.`);
   }
   return isQueued;
 }
@@ -200,6 +227,7 @@ export async function createRunners(
   githubRunnerConfig: CreateGitHubRunnerConfig,
   ec2RunnerConfig: CreateEC2RunnerConfig,
   ghClient: Octokit,
+  redis?: RedisClient,
 ): Promise<void> {
   const instances = await createRunner({
     runnerType: githubRunnerConfig.runnerType,
@@ -207,7 +235,7 @@ export async function createRunners(
     ...ec2RunnerConfig,
   });
   if (instances.length !== 0) {
-    await createStartRunnerConfig(githubRunnerConfig, instances, ghClient);
+    await createStartRunnerConfig(githubRunnerConfig, instances, ghClient, redis);
   }
 }
 
@@ -235,6 +263,7 @@ export async function scaleUp(eventSource: string, payload: ActionRequestMessage
   const amiIdSsmParameterName = process.env.AMI_ID_SSM_PARAMETER_NAME;
   const runnerNamePrefix = process.env.RUNNER_NAME_PREFIX || '';
   const ssmConfigPath = process.env.SSM_CONFIG_PATH || '';
+  const redisUrl = process.env.RUNNER_REDIS_URL;
 
   if (ephemeralEnabled && payload.eventType !== 'workflow_job') {
     logger.warn(`${payload.eventType} event is not supported in combination with ephemeral runners.`);
@@ -265,10 +294,20 @@ export async function scaleUp(eventSource: string, payload: ActionRequestMessage
     ghesApiUrl = `${ghesBaseUrl}/api/v3`;
   }
 
+  let redis: RedisClient | undefined;
+  if (redisUrl) {
+    logger.info(`Connecting to Redis at ${redisUrl}`);
+    redis = createClient({
+      url: `redis://${redisUrl}:6379`
+    });
+    redis.on('error', err => logger.error(`Cannot connect to redis on redis://${redisUrl}:6379: ${err}`));
+    await redis.connect();
+  }
+
   const installationId = await getInstallationId(ghesApiUrl, enableOrgLevel, payload);
   const ghAuth = await createGithubInstallationAuth(installationId, ghesApiUrl);
   const githubInstallationClient = await createOctoClient(ghAuth.token, ghesApiUrl);
-  if (!enableJobQueuedCheck || (await isJobQueued(githubInstallationClient, payload))) {
+  if (!enableJobQueuedCheck || (await isJobQueued(githubInstallationClient, payload, redis))) {
     const currentRunners = await listEC2Runners({
       environment,
       runnerType,
@@ -306,22 +345,27 @@ export async function scaleUp(eventSource: string, payload: ActionRequestMessage
           amiIdSsmParameterName,
         },
         githubInstallationClient,
+        redis,
       );
     } else {
-      logger.info('No runner will be created, maximum number of runners reached.');
+      logger.info('No runners will be created, maximum number of runners reached.');
       if (ephemeral) {
-        throw new ScaleError('No runners create: maximum of runners reached.');
+        throw new ScaleError('No runners will be created: maximum of runners reached.');
       }
     }
   }
 }
+
 async function createStartRunnerConfig(
   githubRunnerConfig: CreateGitHubRunnerConfig,
   instances: string[],
   ghClient: Octokit,
+  redis?: RedisClient,
 ) {
-  if (githubRunnerConfig.enableJitConfig && githubRunnerConfig.ephemeral) {
-    await createJitConfig(githubRunnerConfig, instances, ghClient);
+  if (githubRunnerConfig.enableJitConfig && githubRunnerConfig.ephemeral && redis) {
+    await createJitConfig(githubRunnerConfig, instances, ghClient, redis);
+  } else if (!redis) {
+    logger.error('Redis is not configured, JIT config will not be used.');
   } else {
     await createRegistrationTokenConfig(githubRunnerConfig, instances, ghClient);
   }
@@ -356,9 +400,13 @@ async function createRegistrationTokenConfig(
   }
 }
 
-async function createJitConfig(githubRunnerConfig: CreateGitHubRunnerConfig, instances: string[], ghClient: Octokit) {
+async function createJitConfig(
+  githubRunnerConfig: CreateGitHubRunnerConfig,
+  instances: string[],
+  ghClient: Octokit,
+  redis: RedisClient,
+) {
   const runnerGroupId = await getRunnerGroupId(githubRunnerConfig, ghClient);
-  const { isDelay, delay } = addDelay(instances);
   const runnerLabels = githubRunnerConfig.runnerLabels.split(',');
 
   logger.debug(`Runner group id: ${runnerGroupId}`);
@@ -387,14 +435,8 @@ async function createJitConfig(githubRunnerConfig: CreateGitHubRunnerConfig, ins
             labels: ephemeralRunnerConfig.runnerLabels,
           });
 
-    // store jit config in ssm parameter store
-    logger.debug('Runner JIT config for ephemeral runner generated.', {
-      instance: instance,
-    });
-    await putParameter(`${githubRunnerConfig.ssmTokenPath}/${instance}`, runnerConfig.data.encoded_jit_config, true);
-    if (isDelay) {
-      // Delay to prevent AWS ssm rate limits by being within the max throughput limit
-      await delay(25);
-    }
+    logger.debug('Runner JIT config for ephemeral runner generated.', {instance: instance});
+    await redis.set(instance, runnerConfig.data.encoded_jit_config);
+    logger.debug('Saved JIT config in redis.', {instance: instance});
   }
 }

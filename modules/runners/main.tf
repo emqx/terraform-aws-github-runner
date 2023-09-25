@@ -133,6 +133,9 @@ resource "aws_launch_template" "runner" {
       {
         "ghr:runner_name_prefix" = var.runner_name_prefix
       },
+      {
+        "ghr:runner_redis_url" = aws_elasticache_cluster.runner.cache_nodes[0].address
+      },
       var.runner_ec2_tags
     )
   }
@@ -201,10 +204,69 @@ resource "aws_security_group" "runner_sg" {
     }
   }
 
+  dynamic "ingress" {
+    for_each = var.ingress_rules
+    iterator = each
+
+    content {
+      cidr_blocks      = each.value.cidr_blocks
+      ipv6_cidr_blocks = each.value.ipv6_cidr_blocks
+      prefix_list_ids  = each.value.prefix_list_ids
+      from_port        = each.value.from_port
+      protocol         = each.value.protocol
+      security_groups  = each.value.security_groups
+      self             = each.value.self
+      to_port          = each.value.to_port
+      description      = each.value.description
+    }
+  }
+
   tags = merge(
     local.tags,
     {
       "Name" = format("%s", local.name_sg)
     },
   )
+}
+
+resource "aws_security_group" "redis" {
+  vpc_id = var.vpc_id
+
+  ingress {
+    protocol  = -1
+    self      = true
+    from_port = 0
+    to_port   = 0
+  }
+
+  ingress {
+    protocol  = "TCP"
+    from_port = 6379
+    to_port   = 6379
+    security_groups = concat(
+      var.enable_managed_runner_security_group ? [aws_security_group.runner_sg[0].id] : [],
+      var.lambda_security_group_ids != null ? var.lambda_security_group_ids : []
+      )
+  }
+
+  tags = {
+    Name = "${var.prefix}-redis-security-group"
+  }
+}
+
+resource "aws_elasticache_subnet_group" "runner" {
+  name       = "${var.prefix}-github-actions-runner-redis-subnet-group"
+  subnet_ids = var.subnet_ids
+}
+
+resource "aws_elasticache_cluster" "runner" {
+  cluster_id           = "${var.prefix}-github-actions-runner-redis"
+  engine               = "redis"
+  subnet_group_name    = aws_elasticache_subnet_group.runner.name
+  security_group_ids   = [aws_security_group.redis.id]
+  node_type            = "cache.t4g.micro"
+  num_cache_nodes      = 1
+  parameter_group_name = "default.redis7"
+  maintenance_window   = "sun:01:00-sun:06:00"
+  snapshot_retention_limit = 0
 }

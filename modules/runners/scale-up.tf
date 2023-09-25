@@ -39,6 +39,7 @@ resource "aws_lambda_function" "scale_up" {
       RUNNER_GROUP_NAME                    = var.runner_group_name
       RUNNER_NAME_PREFIX                   = var.runner_name_prefix
       RUNNERS_MAXIMUM_COUNT                = var.runners_maximum_count
+      RUNNER_REDIS_URL                     = aws_elasticache_cluster.runner.cache_nodes[0].address
       SERVICE_NAME                         = "runners-scale-up"
       SSM_TOKEN_PATH                       = "${var.ssm_paths.root}/${var.ssm_paths.tokens}"
       SSM_CONFIG_PATH                      = "${var.ssm_paths.root}/${var.ssm_paths.config}"
@@ -105,6 +106,16 @@ resource "aws_iam_role_policy" "scale_up" {
   })
 }
 
+resource "aws_iam_role_policy" "scale_up_workflow_job_sqs" {
+  count = var.sqs_workflow_job_queue != null ? 1 : 0
+  name  = "${var.prefix}-lambda-scale-up-publish-workflow-job-sqs-policy"
+  role  = aws_iam_role.scale_up.name
+
+  policy = templatefile("${path.module}/policies/lambda-publish-sqs-policy.json", {
+    sqs_resource_arns = jsonencode([var.sqs_workflow_job_queue.arn])
+    kms_key_arn       = var.kms_key_arn != null ? var.kms_key_arn : ""
+  })
+}
 
 resource "aws_iam_role_policy" "scale_up_logging" {
   name = "${var.prefix}-lambda-logging"

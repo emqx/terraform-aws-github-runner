@@ -22,9 +22,21 @@ locals {
         "log_stream_name" : "{instance_id}"
       },
       {
+        "log_group_name" : "runner",
+        "prefix_log_group" : true,
+        "file_path" : var.runner_os == "windows" ? "C:/actions-runner/job-started-hook.log" : "/opt/actions-runner/job-started-hook.log",
+        "log_stream_name" : "{instance_id}"
+      },
+      {
         "log_group_name" : "runner-startup",
         "prefix_log_group" : true,
         "file_path" : var.runner_os == "windows" ? "C:/runner-startup.log" : "/var/log/runner-startup.log",
+        "log_stream_name" : "{instance_id}"
+      },
+      {
+        "log_group_name" : "cloud-init-output",
+        "prefix_log_group" : true,
+        "file_path" : var.runner_os == "windows" ? "C:/cloud-init-output.log" : "/var/log/cloud-init-output.log",
         "log_stream_name" : "{instance_id}"
       }
     ]

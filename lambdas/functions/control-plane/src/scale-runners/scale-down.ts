@@ -150,6 +150,7 @@ async function evaluateAndRemoveRunners(
   let idleCounter = getIdleRunnerCount(scaleDownConfigs);
   const evictionStrategy = getEvictionStrategy(scaleDownConfigs);
   const ownerTags = new Set(ec2Runners.map((runner) => runner.owner));
+  logger.debug(`Found: '${ownerTags.size}' unique owner tags: '${Array.from(ownerTags).join(', ')}'`);
 
   for (const ownerTag of ownerTags) {
     const ec2RunnersFiltered = ec2Runners
@@ -157,6 +158,7 @@ async function evaluateAndRemoveRunners(
       .sort(evictionStrategy === 'oldest_first' ? oldestFirstStrategy : newestFirstStrategy);
     logger.debug(`Found: '${ec2RunnersFiltered.length}' active GitHub runners with owner tag: '${ownerTag}'`);
     for (const ec2Runner of ec2RunnersFiltered) {
+      logger.debug(`Evaluating runner ${ec2Runner}`);
       const ghRunners = await listGitHubRunners(ec2Runner);
       const ghRunnersFiltered = ghRunners.filter((runner: { name: string }) =>
         runner.name.endsWith(ec2Runner.instanceId),
