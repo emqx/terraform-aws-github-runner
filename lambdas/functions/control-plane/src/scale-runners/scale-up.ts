@@ -1,11 +1,10 @@
 import { Tag } from '@aws-sdk/client-ec2';
-import { SQS, SendMessageCommandInput } from '@aws-sdk/client-sqs';
-import { Octokit } from '@octokit/rest';
 import { addPersistentContextToChildLogger, createChildLogger } from '@terraform-aws-github-runner/aws-powertools-util';
 import { getParameter, putParameter } from '@terraform-aws-github-runner/aws-ssm-util';
 import { createClient } from 'redis';
 import yn from 'yn';
 
+import { Octokit } from '../gh-auth/gh-auth';
 import { createGithubAppAuth, createGithubInstallationAuth, createOctoClient } from '../gh-auth/gh-auth';
 import { createRunner, listEC2Runners } from './../aws/runners';
 import { RunnerInputParameters } from './../aws/runners.d';
@@ -134,7 +133,8 @@ async function getInstallationId(
 async function isJobQueued(
   githubInstallationClient: Octokit,
   payload: ActionRequestMessage,
-  redis: RedisClient | undefined): Promise<boolean> {
+  redis: RedisClient | undefined,
+): Promise<boolean> {
   let isQueued = false;
   if (payload.eventType === 'workflow_job') {
     const job = await githubInstallationClient.actions.getJobForWorkflowRun({
@@ -152,9 +152,11 @@ async function isJobQueued(
           .set(`workflow:${payload.id}:requeue_count`, 0)
           .exec();
       }
-    }
-    else {
-      logger.warn(`Job ${payload.id} is ${job.data.status}: ${job.data.name}. A new runner instance will NOT be created for this job. See ${job.data.html_url}.`);
+    } else {
+      logger.warn(
+        `Job ${payload.id} is ${job.data.status}: ${job.data.name}.` +
+          `A new runner instance will NOT be created for this job. See ${job.data.html_url}.`,
+      );
       if (redis) {
         await redis
           .multi()
@@ -298,9 +300,9 @@ export async function scaleUp(eventSource: string, payload: ActionRequestMessage
   if (redisUrl) {
     logger.info(`Connecting to Redis at ${redisUrl}`);
     redis = createClient({
-      url: `redis://${redisUrl}:6379`
+      url: `redis://${redisUrl}:6379`,
     });
-    redis.on('error', err => logger.error(`Cannot connect to redis on redis://${redisUrl}:6379: ${err}`));
+    redis.on('error', (err) => logger.error(`Cannot connect to redis on redis://${redisUrl}:6379: ${err}`));
     await redis.connect();
   }
 
@@ -435,8 +437,8 @@ async function createJitConfig(
             labels: ephemeralRunnerConfig.runnerLabels,
           });
 
-    logger.debug('Runner JIT config for ephemeral runner generated.', {instance: instance});
+    logger.debug('Runner JIT config for ephemeral runner generated.', { instance: instance });
     await redis.set(instance, runnerConfig.data.encoded_jit_config);
-    logger.debug('Saved JIT config in redis.', {instance: instance});
+    logger.debug('Saved JIT config in redis.', { instance: instance });
   }
 }

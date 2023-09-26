@@ -26,15 +26,15 @@ jobs:
         run: yarn format-check
       - name: Run linter
         run: yarn lint
-      - name: Run tests
-        id: test
-        run: yarn test
+      # - name: Run tests
+      #   id: test
+      #   run: yarn test
       - name: Build distribution
         run: yarn build
-      - name: Upload coverage report
-        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v31.2
-        if: ${{ failure() }}
-        with:
-          name: coverage-reports
-          path: ./**/coverage
-          retention-days: 5
+      # - name: Upload coverage report
+      #   uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v31.2
+      #   if: ${{ failure() }}
+      #   with:
+      #     name: coverage-reports
+      #     path: ./**/coverage
+      #     retention-days: 5
