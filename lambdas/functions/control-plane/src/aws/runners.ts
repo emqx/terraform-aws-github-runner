@@ -5,8 +5,8 @@ import {
   DescribeInstancesResult,
   EC2Client,
   FleetLaunchTemplateOverridesRequest,
-  TerminateInstancesCommand,
   Tag,
+  TerminateInstancesCommand,
 } from '@aws-sdk/client-ec2';
 import { createChildLogger } from '@terraform-aws-github-runner/aws-powertools-util';
 import { getParameter } from '@terraform-aws-github-runner/aws-ssm-util';
@@ -180,7 +180,7 @@ export async function createRunner(runnerParameters: Runners.RunnerInputParamete
       TagSpecifications: [
         {
           ResourceType: 'instance',
-          Tags: [...tags, ...(runnerParameters.tags ?? [])]
+          Tags: [...tags, ...(runnerParameters.tags ?? [])],
         },
         {
           ResourceType: 'volume',

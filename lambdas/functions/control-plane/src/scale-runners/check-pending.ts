@@ -25,12 +25,12 @@ export async function checkPending(): Promise<void> {
 
   logger.info(`Connecting to Redis at ${redisUrl}`);
   const redis = createClient({
-    url: `redis://${redisUrl}:6379`
+    url: `redis://${redisUrl}:6379`,
   });
-  redis.on('error', err => logger.error(`Cannot connect to redis on redis://${redisUrl}:6379: ${err}`));
+  redis.on('error', (err) => logger.error(`Cannot connect to redis on redis://${redisUrl}:6379: ${err}`));
   await redis.connect();
   for await (const key of redis.scanIterator({ MATCH: `workflow:*:ts`, COUNT: 1000, TYPE: 'string' })) {
-    const [, id, ] = key.split(':');
+    const [, id] = key.split(':');
     const ts = await redis.get(key);
     const currentTs = Date.now();
     logger.debug(`${key}=${ts}, currentTs=${currentTs}, MaxWaitTime=${actionRequestMaxWaitTime}`);
@@ -52,11 +52,7 @@ export async function checkPending(): Promise<void> {
     const payload = await redis.get(`workflow:${id}:payload`);
     if (!payload) {
       logger.warn(`Workflow id ${id} has no payload, delete the entry.`);
-      await redis
-        .multi()
-        .del(`workflow:${id}:ts`)
-        .del(`workflow:${id}:requeue_count`)
-        .exec();
+      await redis.multi().del(`workflow:${id}:ts`).del(`workflow:${id}:requeue_count`).exec();
       continue;
     }
     const message: ActionRequestMessage = JSON.parse(payload) as ActionRequestMessage;

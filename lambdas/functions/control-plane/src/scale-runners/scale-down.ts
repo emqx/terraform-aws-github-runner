@@ -1,8 +1,7 @@
-import { Octokit } from '@octokit/rest';
 import { createChildLogger } from '@terraform-aws-github-runner/aws-powertools-util';
 import moment from 'moment';
 
-import { createGithubAppAuth, createGithubInstallationAuth, createOctoClient } from '../gh-auth/gh-auth';
+import { Octokit, createGithubAppAuth, createGithubInstallationAuth, createOctoClient } from '../gh-auth/gh-auth';
 import { bootTimeExceeded, listEC2Runners, terminateRunner } from './../aws/runners';
 import { RunnerInfo, RunnerList } from './../aws/runners.d';
 import { GhRunners, githubCache } from './cache';

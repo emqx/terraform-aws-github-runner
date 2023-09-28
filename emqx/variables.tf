@@ -1,15 +1,9 @@
-variable "github_app" {
-  description = "GitHub for API usages."
-  sensitive   = true
-
-  type = object({
-    id         = string
-    key_base64 = string
-  })
-  default = null
+variable "github_app_key_base64" {
+  type = string
+  sensitive = true
 }
 
-variable "environment" {
-  type    = string
-  default = null
+variable "github_app_id" {
+  type = string
+  sensitive = true
 }

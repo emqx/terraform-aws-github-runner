@@ -23,6 +23,7 @@ resource "aws_kms_alias" "github" {
   name          = "alias/github/action-runners"
   target_key_id = aws_kms_key.github.key_id
 }
+
 module "base" {
   source = "../base"
 

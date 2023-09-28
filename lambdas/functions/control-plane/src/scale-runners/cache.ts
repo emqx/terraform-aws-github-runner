@@ -1,4 +1,4 @@
-import { Octokit } from '@octokit/rest';
+import { Octokit } from '../gh-auth/gh-auth';
 
 export type UnboxPromise<T> = T extends Promise<infer U> ? U : T;
 

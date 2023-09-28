@@ -4,9 +4,9 @@ import 'source-map-support/register';
 
 import { PoolEvent, adjust } from './pool/pool';
 import ScaleError from './scale-runners/ScaleError';
+import { checkPending } from './scale-runners/check-pending';
 import { scaleDown } from './scale-runners/scale-down';
 import { scaleUp } from './scale-runners/scale-up';
-import { checkPending } from './scale-runners/check-pending';
 
 export async function scaleUpHandler(event: SQSEvent, context: Context): Promise<void> {
   setContext(context, 'lambda.ts');

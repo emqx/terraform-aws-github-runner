@@ -142,7 +142,7 @@ build {
   ]
 
   provisioner "file" {
-    content = file("base.sh")
+    content     = file("base.sh")
     destination = "/tmp/base.sh"
   }
 
@@ -167,7 +167,7 @@ build {
 
   provisioner "shell" {
     env = {
-      "RUNNER_TARBALL_URL":"https://github.com/actions/runner/releases/download/v${local.runner_version}/actions-runner-linux-x64-${local.runner_version}.tar.gz"
+      "RUNNER_TARBALL_URL" : "https://github.com/actions/runner/releases/download/v${local.runner_version}/actions-runner-linux-x64-${local.runner_version}.tar.gz"
     }
     inline = [
       "sudo chmod +x /tmp/install-runner.sh",
