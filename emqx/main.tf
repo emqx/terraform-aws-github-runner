@@ -46,7 +46,6 @@ module "runners" {
   enable_userdata     = false
   ami_filter          = { name = ["github-runner-amd64-*"], state = ["available"] }
   ami_owners          = [data.aws_caller_identity.current.account_id]
-  ami_id_ssm_parameter_name = "/github-action-runners/ci/runners/ami_id"
   runner_os           = "linux"
   runner_architecture = "x64"
   runner_extra_labels = "ephemeral"
