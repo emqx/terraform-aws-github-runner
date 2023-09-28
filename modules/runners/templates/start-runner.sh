@@ -100,10 +100,12 @@ EOL
 JOB_STARTED_HOOK=/opt/actions-runner/job-started-hook.sh
 JOB_STARTED_HOOK_LOG=/opt/actions-runner/job-started-hook.log
 cat > $JOB_STARTED_HOOK <<EOF
-#!/bin/bash -x
-redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:ts" 2>&1 >> $JOB_STARTED_HOOK_LOG
-redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:payload" 2>&1 >> $JOB_STARTED_HOOK_LOG
-redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:requeue_count" 2>&1 >> $JOB_STARTED_HOOK_LOG
+#!/bin/bash
+set -x
+exec &> >(tee $JOB_STARTED_HOOK_LOG)
+redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:ts"
+redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:payload"
+redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:requeue_count"
 EOF
 
 chmod a+x $JOB_STARTED_HOOK

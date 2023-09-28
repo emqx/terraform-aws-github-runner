@@ -19,7 +19,8 @@ jobs:
       image: index.docker.io/hashicorp/packer@sha256:297bbbbbbf3ce9e0431ac1e8f02934b20e1197613f877b55dfdb1ebfd94eb748 # ratchet:index.docker.io/hashicorp/packer:1.8.6
     strategy:
       matrix:
-        image: ["emqx-amd64"]
+        image:
+          - emqx-amd64
     defaults:
       run:
         working-directory: images/${{ matrix.image }}
