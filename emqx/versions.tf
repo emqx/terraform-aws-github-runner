@@ -14,4 +14,9 @@ terraform {
     }
   }
   required_version = ">= 1.3.0"
+  backend "s3" {
+    bucket = "emqx-terraform-state"
+    key    = "terraform-aws-github-runner"
+    region = "eu-west-1"
+  }
 }
