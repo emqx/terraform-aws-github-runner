@@ -21,7 +21,7 @@ jobs:
       image: hashicorp/terraform:1.5.3
     steps:
       - name: "Checkout"
-        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
       - name: "Fake zip files" # Validate will fail if it cannot find the zip files
         run: |
           touch lambdas/functions/webhook/webhook.zip
@@ -38,7 +38,7 @@ jobs:
         working-directory: emqx
         run: terraform validate
       - name: Setup TFLint
-        uses: terraform-linters/setup-tflint@v3
+        uses: terraform-linters/setup-tflint@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run TFLint
