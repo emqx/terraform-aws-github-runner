@@ -35,10 +35,10 @@ runner_redis_url=$(echo "$tags" | jq -r '.Tags[]  | select(.Key == "ghr:runner_r
 
 %{ endif }
 
-echo "Retrieved ghr:environment tag - ($environment)"
-echo "Retrieved ghr:ssm_config_path tag - ($ssm_config_path)"
-echo "Retrieved ghr:runner_name_prefix tag - ($runner_name_prefix)"
-echo "Retrieved ghr:runner_redis_url tag - ($runner_redis_url)"
+echo "ghr:environment = $environment"
+echo "ghr:ssm_config_path = $ssm_config_path"
+echo "ghr:runner_name_prefix = $runner_name_prefix"
+echo "ghr:runner_redis_url = $runner_redis_url"
 
 parameters=$(aws ssm get-parameters-by-path --path "$ssm_config_path" --region "$region" --query "Parameters[*].{Name:Name,Value:Value}")
 echo "Retrieved parameters from AWS SSM ($parameters)"
@@ -55,8 +55,11 @@ echo "Retrieved /$ssm_config_path/agent_mode parameter - ($agent_mode)"
 enable_jit_config=$(echo "$parameters" | jq --arg ssm_config_path "$ssm_config_path" -r '.[] | select(.Name == "'$ssm_config_path'/enable_jit_config") | .Value')
 echo "Retrieved /$ssm_config_path/enable_jit_config parameter - ($enable_jit_config)"
 
+docker_cache_proxy=$(echo "$parameters" | jq --arg ssm_config_path "$ssm_config_path" -r '.[] | select(.Name == "'$ssm_config_path'/docker_cache_proxy") | .Value')
+echo "Retrieved /$ssm_config_path/docker_cache_proxy parameter - ($docker_cache_proxy)"
+
 if [[ "$enable_cloudwatch_agent" == "true" ]]; then
-  echo "Cloudwatch is enabled"
+  echo "Cloudwatch is enabled, initializing cloudwatch agent."
   amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c "ssm:$ssm_config_path/cloudwatch_agent_config_runner"
 fi
 
@@ -72,6 +75,72 @@ if [ -z "$run_as" ]; then
   run_as="ec2-user"
 fi
 
+if [ -b /dev/nvme1n1 ]; then
+    echo "Found extra data volume, format and mount to /data"
+    mount
+    lsblk
+    if ! mkfs.xfs -f -L data /dev/nvme1n1; then
+      echo "Failed to format /dev/nvme1n1"
+      aws ec2 terminate-instances --instance-ids $instance_id --region $region
+      exit 1
+    fi
+
+    mkdir -p /data
+    mount -L data /data
+    mkdir -p /data/docker
+    chown -R root:docker /data/docker
+
+    mkdir -p /data/_work
+    chown -R $run_as:$run_as /data/_work
+    rm -rf /opt/actions-runner/_work
+    ln -s /data/_work /opt/actions-runner/
+
+    mkdir -p /data/_diag
+    chown -R $run_as:$run_as /data/_diag
+    rm -rf /opt/actions-runner/_diag
+    ln -s /data/_diag /opt/actions-runner/
+fi
+
+if [ -n "$docker_cache_proxy" ]; then
+  echo "Setting docker cache proxy to $docker_cache_proxy"
+  # See https://docs.docker.com/registry/recipes/mirror/
+  tmp=$(mktemp)
+  jq --arg reg "http://$docker_cache_proxy,http://$docker_cache_proxy:81" '."registry-mirrors" = ($reg|split(","))' /etc/docker/daemon.json > "$tmp" && mv "$tmp" /etc/docker/daemon.json
+  tmp=$(mktemp)
+  jq --arg reg "$docker_cache_proxy,$docker_cache_proxy:81" '."insecure-registries" = ($reg|split(","))' /etc/docker/daemon.json > "$tmp" && mv "$tmp" /etc/docker/daemon.json
+
+  # without below config, docker buildx will fail when throttled by docker hub
+  # https://stackoverflow.com/questions/63409755/how-to-use-docker-buildx-pushing-image-to-registry-use-http-protocol#63411302
+  # https://github.com/docker/buildx/issues/1370
+  # https://docs.docker.com/build/buildkit/toml-configuration/
+  # https://github.com/moby/buildkit/blob/master/docs/buildkitd.toml.md
+  mkdir -p /home/$run_as/.docker/buildx
+  chown -R $run_as /home/$run_as/.docker
+  cat > /home/$run_as/.docker/buildx/buildkitd.default.toml <<EOF
+[registry."$docker_cache_proxy:80"]
+http = true
+insecure = true
+
+[registry."$docker_cache_proxy:81"]
+http = true
+insecure = true
+EOF
+
+  mkdir -p /root/.docker/buildx
+  cat > /root/.docker/buildx/buildkitd.default.toml <<EOF
+[registry."$docker_cache_proxy:80"]
+http = true
+insecure = true
+
+[registry."$docker_cache_proxy:81"]
+http = true
+insecure = true
+EOF
+fi
+
+systemctl restart docker.service
+docker info
+
 if [[ "$run_as" == "root" ]]; then
   echo "run_as is set to root - export RUNNER_ALLOW_RUNASROOT=1"
   export RUNNER_ALLOW_RUNASROOT=1
@@ -82,35 +151,55 @@ chown -R $run_as .
 info_arch=$(uname -p)
 info_os=$(( lsb_release -ds || cat /etc/*release || uname -om ) 2>/dev/null | head -n1 | cut -d "=" -f2- | tr -d '"')
 
-cat > /opt/actions-runner/.setup_info <<EOL
-[{
-    "group": "Operating System",
-    "detail": "Distribution: $info_os\nArchitecture: $info_arch"
-  },
-  {
-    "group": "Runner Image",
-    "detail": "AMI id: $ami_id"
-  },
-  {
-    "group": "EC2",
-    "detail": "Instance type: $instance_type\nAvailability zone: $availability_zone"
-  }]
-EOL
+jq -n \
+  --arg info_os "$info_os" \
+  --arg info_arch "$info_arch" \
+  --arg ami_id "$ami_id" \
+  --arg instance_type "$instance_type" \
+  --arg availability_zone "$availability_zone" \
+  '[
+     {"group": "Operating System", "detail": "Distribution: \($info_os)\nArchitecture: \($info_arch)"},
+     {"group": "Runner Image", "detail": "AMI id: \($ami_id)"},
+     {"group": "EC2", "detail": "Instance type: \($instance_type)\nAvailability zone: \($availability_zone)"}
+   ]' > /opt/actions-runner/.setup_info
 
 JOB_STARTED_HOOK=/opt/actions-runner/job-started-hook.sh
-JOB_STARTED_HOOK_LOG=/opt/actions-runner/job-started-hook.log
+JOB_COMPLETED_HOOK=/opt/actions-runner/job-completed-hook.sh
+
 cat > $JOB_STARTED_HOOK <<EOF
 #!/bin/bash
 set -x
-exec &> >(tee $JOB_STARTED_HOOK_LOG)
+df -h
 redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:ts"
 redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:payload"
 redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:requeue_count"
+
 EOF
 
+cat > $JOB_COMPLETED_HOOK <<EOF
+#!/bin/bash
+set -x
+journalctl -u docker.service --no-pager
+
+EOF
+
+runner_s3_bucket=id-emqx-test
+if [ -n "$runner_s3_bucket" ]; then
+    if aws s3api head-object --bucket "$runner_s3_bucket" --key job_started_hook.sh >/dev/null 2>&1; then
+        aws s3 cp s3://$s3_bucket_name/job_started_hook.sh /tmp/job_started_hook.sh
+        cat /tmp/job_started_hook.sh >> $JOB_STARTED_HOOK
+    fi
+    if aws s3api head-object --bucket "$runner_s3_bucket" --key job_completed_hook.sh >/dev/null 2>&1; then
+        aws s3 cp s3://$s3_bucket_name/job_completed_hook.sh /tmp/job_completed_hook.sh
+        cat /tmp/job_completed_hook.sh >> $JOB_COMPLETED_HOOK
+    fi
+fi
+
 chmod a+x $JOB_STARTED_HOOK
+chmod a+x $JOB_COMPLETED_HOOK
 
 echo "ACTIONS_RUNNER_HOOK_JOB_STARTED=$JOB_STARTED_HOOK" >> /opt/actions-runner/.env
+echo "ACTIONS_RUNNER_HOOK_JOB_COMPLETED=$JOB_COMPLETED_HOOK" >> /opt/actions-runner/.env
 
 ## Start the runner
 echo "Starting runner after $(awk '{print int($1/3600)":"int(($1%3600)/60)":"int($1%60)}' /proc/uptime)"
@@ -137,7 +226,6 @@ cat >/opt/start-runner-service.sh <<-EOF
   fi
 
   echo "Runner has finished"
-
   echo "Stopping cloudwatch service"
   systemctl stop amazon-cloudwatch-agent.service
   echo "Terminating instance"

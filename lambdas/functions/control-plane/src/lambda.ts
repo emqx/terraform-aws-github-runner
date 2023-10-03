@@ -23,7 +23,7 @@ export async function scaleUpHandler(event: SQSEvent, context: Context): Promise
     if (e instanceof ScaleError) {
       throw e;
     } else {
-      logger.warn(`${JSON.stringify(e)}`);
+      logger.error(`${(e as Error).message}`, { error: e as Error });
     }
   }
 }

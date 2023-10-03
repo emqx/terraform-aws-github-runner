@@ -40,3 +40,9 @@ resource "aws_ssm_parameter" "runner_group" {
   tags  = local.tags
 }
 
+resource "aws_ssm_parameter" "docker_cache_proxy" {
+  name  = "${var.ssm_paths.root}/${var.ssm_paths.config}/docker_cache_proxy"
+  type  = "String"
+  value = var.docker_cache_proxy
+  tags  = local.tags
+}

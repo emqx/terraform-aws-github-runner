@@ -1,11 +1,12 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  environment    = "ci"
-  aws_region     = "eu-west-1"
-  prefix         = "ci"
-  vpc_cidr       = "10.0.0.0/16"
-  webhook_secret = random_id.random.hex
+  environment       = "ci"
+  aws_region        = "eu-west-1"
+  prefix            = "ci"
+  route53_zone_name = "${local.prefix}.emqx.io"
+  vpc_cidr          = "10.0.0.0/16"
+  webhook_secret    = random_id.random.hex
 }
 
 resource "random_id" "random" {
@@ -58,17 +59,17 @@ module "runners" {
   # Let the module manage the service linked role
   create_service_linked_role_spot = true
 
-  enable_ssm_on_runners                 = true
-  enable_ephemeral_runners              = true
-  enable_organization_runners           = true
-  enable_job_queued_check               = true
-  enable_fifo_build_queue               = false
-  runner_run_as                         = "ubuntu"
-  delay_webhook_event                   = 0
-  minimum_running_time_in_minutes       = 2
-  runners_maximum_count                 = 256
-  scale_down_schedule_expression        = "cron(*/5 * * * ? *)"
-  logging_retention_in_days             = 7
+  enable_ssm_on_runners           = true
+  enable_ephemeral_runners        = true
+  enable_organization_runners     = true
+  enable_job_queued_check         = true
+  enable_fifo_build_queue         = false
+  runner_run_as                   = "ubuntu"
+  delay_webhook_event             = 0
+  minimum_running_time_in_minutes = 2
+  runners_maximum_count           = 256
+  scale_down_schedule_expression  = "cron(*/5 * * * ? *)"
+  logging_retention_in_days       = 7
   # enable_user_data_debug_logging_runner = true
   # log_level                             = "debug"
 
@@ -89,6 +90,8 @@ module "runners" {
   webhook_lambda_zip                = "../lambda_output/webhook.zip"
   runners_lambda_zip                = "../lambda_output/runners.zip"
   runner_binaries_syncer_lambda_zip = "../lambda_output/runner-binaries-syncer.zip"
+
+  docker_cache_proxy = module.docker-cache-proxy.hostname
 }
 
 resource "aws_security_group" "lambda" {
@@ -130,4 +133,24 @@ module "webhook-github-app" {
     webhook_secret = local.webhook_secret
   }
   webhook_endpoint = module.runners.webhook.endpoint
+}
+
+resource "aws_route53_zone" "route53_zone" {
+  name = local.route53_zone_name
+  vpc {
+    vpc_id = module.vpc.vpc_id
+  }
+  lifecycle {
+    ignore_changes = [vpc]
+  }
+}
+
+module "docker-cache-proxy" {
+  source             = "../modules/docker-cache-proxy"
+  prefix             = local.prefix
+  vpc_id             = module.vpc.vpc_id
+  subnet_id          = module.vpc.private_subnet_ids[0]
+  security_group_ids = [aws_security_group.lambda.id]
+  route53_zone_id    = aws_route53_zone.route53_zone.zone_id
+  route53_zone_name  = aws_route53_zone.route53_zone.name
 }

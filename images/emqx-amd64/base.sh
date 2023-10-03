@@ -21,31 +21,6 @@ echo '* hard nofile 65536' >> /etc/security/limits.conf
 echo '* soft stack 16384' >> /etc/security/limits.conf
 echo '* hard stack 16384' >> /etc/security/limits.conf
 
-cat << EOF > /var/lib/cloud/scripts/per-boot/01-mount-data.sh
-#!/bin/bash -ex
-if [ -b /dev/nvme1n1 ]; then
-    echo "Found extra data volume, format and mount to /data"
-    mkfs.ext4 -L data /dev/nvme1n1
-
-    mkdir -p /data
-    mount -L data /data
-    mkdir -p /data/docker
-    chown -R root:docker /data/docker
-    systemctl restart docker.service
-
-    mkdir -p /data/_work
-    chown -R ubuntu:ubuntu /data/_work
-    rm -rf /opt/actions-runner/_work
-    ln -s /data/_work /opt/actions-runner/
-
-    mkdir -p /data/_diag
-    chown -R ubuntu:ubuntu /data/_diag
-    rm -rf /opt/actions-runner/_diag
-    ln -s /data/_diag /opt/actions-runner/
-fi
-EOF
-chmod +x /var/lib/cloud/scripts/per-boot/01-mount-data.sh
-
 apt-get -y update
 apt-get -y install apt-transport-https ca-certificates software-properties-common
 # https://github.com/ilikenwf/apt-fast
@@ -77,7 +52,6 @@ EOF
 
 # redis
 curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
-
 echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" > /etc/apt/sources.list.d/redis.list
 apt-get -y update && apt-get -y install redis
 
@@ -89,9 +63,14 @@ curl -fsSLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/st
 echo "$(<kubectl.sha256) kubectl" | sha256sum --check
 install kubectl /usr/local/bin/kubectl
 
-curl https://baltocdn.com/helm/signing.asc | gpg --dearmor -o /usr/share/keyrings/helm.gpg
+curl -fsSL https://baltocdn.com/helm/signing.asc | gpg --dearmor -o /usr/share/keyrings/helm.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" > /etc/apt/sources.list.d/helm-stable-debian.list
 apt-get -y update && apt-get -y install helm
+
+# java
+curl -fsSL https://apt.corretto.aws/corretto.key | gpg --dearmor -o /usr/share/keyrings/corretto.key
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/corretto.key] https://apt.corretto.aws stable main" > /etc/apt/sources.list.d/corretto.list
+apt-get -y update && apt-get -y install java-11-amazon-corretto-jdk maven
 
 # aws tools
 wget -q https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb -O /tmp/amazon-cloudwatch-agent.deb
@@ -108,6 +87,7 @@ apt install /tmp/session-manager-plugin.deb
 wget -q https://github.com/cli/cli/releases/download/v2.33.0/gh_2.33.0_linux_amd64.deb -O /tmp/gh.deb
 apt install /tmp/gh.deb
 
+# yq
 wget -q https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /tmp/yq
 mv /tmp/yq /usr/bin/yq
 chmod +x /usr/bin/yq

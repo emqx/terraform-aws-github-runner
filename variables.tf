@@ -800,3 +800,8 @@ variable "enable_jit_config" {
   type        = bool
   default     = null
 }
+
+variable "docker_cache_proxy" {
+  type    = string
+  default = null
+}
