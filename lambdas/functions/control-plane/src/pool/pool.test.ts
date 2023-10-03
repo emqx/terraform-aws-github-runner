@@ -1,9 +1,9 @@
+import { Octokit } from '@octokit/rest';
 import { mocked } from 'jest-mock';
 import moment from 'moment-timezone';
 import nock from 'nock';
 
 import { listEC2Runners } from '../aws/runners';
-import { Octokit } from '../gh-auth/gh-auth';
 import * as ghAuth from '../gh-auth/gh-auth';
 import { createRunners } from '../scale-runners/scale-up';
 import { adjust } from './pool';

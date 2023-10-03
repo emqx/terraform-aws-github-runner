@@ -1,10 +1,10 @@
 import { Tag } from '@aws-sdk/client-ec2';
+import { Octokit } from '@octokit/rest';
 import { addPersistentContextToChildLogger, createChildLogger } from '@terraform-aws-github-runner/aws-powertools-util';
 import { getParameter, putParameter } from '@terraform-aws-github-runner/aws-ssm-util';
 import { createClient } from 'redis';
 import yn from 'yn';
 
-import { Octokit } from '../gh-auth/gh-auth';
 import { createGithubAppAuth, createGithubInstallationAuth, createOctoClient } from '../gh-auth/gh-auth';
 import { createRunner, listEC2Runners } from './../aws/runners';
 import { RunnerInputParameters } from './../aws/runners.d';

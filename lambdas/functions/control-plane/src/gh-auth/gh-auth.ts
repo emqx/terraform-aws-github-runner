@@ -7,34 +7,11 @@ import {
   InstallationAuthOptions,
   StrategyOptions,
 } from '@octokit/auth-app/dist-types/types';
-import { Octokit as OctokitCore } from '@octokit/core';
 import { OctokitOptions } from '@octokit/core/dist-types/types';
-import { paginateRest } from '@octokit/plugin-paginate-rest';
-import { restEndpointMethods } from '@octokit/plugin-rest-endpoint-methods';
-import { retry } from '@octokit/plugin-retry';
-import { throttling } from '@octokit/plugin-throttling';
 import { request } from '@octokit/request';
+import { Octokit } from '@octokit/rest';
 import { createChildLogger } from '@terraform-aws-github-runner/aws-powertools-util';
 import { getParameter } from '@terraform-aws-github-runner/aws-ssm-util';
-
-export { RequestError } from '@octokit/request-error';
-export type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
-
-export const ThrottledOctokit = OctokitCore.plugin(restEndpointMethods, paginateRest, retry, throttling).defaults({
-  userAgent: `octokit.js/gh-auth-lambda`,
-  throttle: {
-    onRateLimit,
-    onSecondaryRateLimit,
-  },
-});
-
-export declare const Octokit: typeof ThrottledOctokit &
-  import('@octokit/core/dist-types/types').Constructor<
-    {
-      paginate: import('@octokit/plugin-paginate-rest').PaginateInterface;
-    } & import('@octokit/plugin-rest-endpoint-methods/dist-types/generated/method-types').RestEndpointMethods &
-      import('@octokit/plugin-rest-endpoint-methods/dist-types/types').Api
-  >;
 
 const logger = createChildLogger('gh-auth');
 
@@ -91,25 +68,3 @@ async function createAuth(installationId: number | undefined, ghesApiUrl: string
   }
   return createAppAuth(authOptions);
 }
-
-function onRateLimit(retryAfter: number, options: any, _octokit: any) {
-  logger.warn(`Request quota exhausted for request ${options.method} ${options.url}`);
-
-  if (options.request.retryCount < 5) {
-    // retry up to 5 times
-    logger.info(`Retrying after ${retryAfter} seconds!`);
-    return true;
-  }
-}
-
-function onSecondaryRateLimit(retryAfter: number, options: any, _octokit: any) {
-  logger.warn(`SecondaryRateLimit detected for request ${options.method} ${options.url}`);
-
-  if (options.request.retryCount === 0) {
-    // only retries once
-    logger.info(`Retrying after ${retryAfter} seconds!`);
-    return true;
-  }
-}
-
-export type Octokit = InstanceType<typeof Octokit>;

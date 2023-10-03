@@ -276,6 +276,8 @@ module "runners" {
   pool_lambda_timeout                        = var.pool_lambda_timeout
   pool_runner_owner                          = var.pool_runner_owner
   pool_lambda_reserved_concurrent_executions = var.pool_lambda_reserved_concurrent_executions
+
+  docker_cache_proxy = var.docker_cache_proxy
 }
 
 module "runner_binaries" {

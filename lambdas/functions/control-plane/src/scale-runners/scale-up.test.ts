@@ -1,11 +1,11 @@
 import { GetParameterCommand, PutParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
+import { Octokit } from '@octokit/rest';
 import { mockClient } from 'aws-sdk-client-mock';
 import 'aws-sdk-client-mock-jest';
 import { mocked } from 'jest-mock';
 import nock from 'nock';
 import { performance } from 'perf_hooks';
 
-import { Octokit } from '../gh-auth/gh-auth';
 import * as ghAuth from '../gh-auth/gh-auth';
 import { createRunner, listEC2Runners } from './../aws/runners';
 import { RunnerInputParameters } from './../aws/runners.d';
