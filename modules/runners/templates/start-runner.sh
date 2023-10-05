@@ -136,6 +136,10 @@ insecure = true
 http = true
 insecure = true
 EOF
+
+  # see https://github.com/docker/buildx/issues/1642
+  # remove when moby v25 is released
+  echo 'export DOCKER_BUILDKIT=0' >> /etc/environment
 fi
 
 systemctl restart docker.service
@@ -185,11 +189,13 @@ EOF
 
 runner_s3_bucket=id-emqx-test
 if [ -n "$runner_s3_bucket" ]; then
-    if aws s3api head-object --bucket "$runner_s3_bucket" --key job_started_hook.sh >/dev/null 2>&1; then
+    if aws s3api head-object --bucket "$runner_s3_bucket" --key job_started_hook.sh; then
+        echo "Found job_started_hook.sh in $runner_s3_bucket, adding extra commands to $JOB_STARTED_HOOK"
         aws s3 cp s3://$s3_bucket_name/job_started_hook.sh /tmp/job_started_hook.sh
         cat /tmp/job_started_hook.sh >> $JOB_STARTED_HOOK
     fi
-    if aws s3api head-object --bucket "$runner_s3_bucket" --key job_completed_hook.sh >/dev/null 2>&1; then
+    if aws s3api head-object --bucket "$runner_s3_bucket" --key job_completed_hook.sh; then
+        echo "Found job_completed_hook.sh in $runner_s3_bucket, adding extra commands to $JOB_COMPLETED_HOOK"
         aws s3 cp s3://$s3_bucket_name/job_completed_hook.sh /tmp/job_completed_hook.sh
         cat /tmp/job_completed_hook.sh >> $JOB_COMPLETED_HOOK
     fi

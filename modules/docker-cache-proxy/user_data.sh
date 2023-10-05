@@ -78,5 +78,5 @@ start_registry() {
         -v "$data_dir":/var/lib/registry/ --name "$name" registry:2
 }
 
-start_registry ghcr 80 "https://ghcr.io"
-start_registry docker 81 "https://registry-1.docker.io"
+start_registry docker 80 "https://registry-1.docker.io"
+start_registry ghcr 81 "https://ghcr.io"
