@@ -19,8 +19,8 @@ resource "aws_lambda_function" "check_pending" {
       LOG_LEVEL                            = var.log_level
       POWERTOOLS_LOGGER_LOG_EVENT          = var.log_level == "debug" ? "true" : "false"
       RUNNER_REDIS_URL                     = aws_elasticache_cluster.runner.cache_nodes[0].address
-      ACTION_REQUEST_MAX_WAIT_TIME         = 300
-      ACTION_REQUEST_MAX_REQUEUE_COUNT     = 5
+      ACTION_REQUEST_MAX_WAIT_TIME         = 180
+      ACTION_REQUEST_MAX_REQUEUE_COUNT     = 15
       SERVICE_NAME                         = "runners-check-pending"
       SUBNET_IDS                           = join(",", var.subnet_ids)
     }

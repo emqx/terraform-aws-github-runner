@@ -10,16 +10,15 @@ import { ScalingDownConfig, getEvictionStrategy, getIdleRunnerCount } from './sc
 
 const logger = createChildLogger('scale-down');
 
-async function getOrCreateOctokit(runner: RunnerInfo): Promise<Octokit> {
-  const key = runner.owner;
-  const cachedOctokit = githubCache.clients.get(key);
+async function getOrCreateOctokit(runnerType: string, runnerOwner: string): Promise<Octokit> {
+  const cachedOctokit = githubCache.clients.get(runnerOwner);
 
   if (cachedOctokit) {
-    logger.debug(`[createGitHubClientForRunner] Cache hit for ${key}`);
+    logger.debug(`[createGitHubClientForRunner] Cache hit for ${runnerOwner}`);
     return cachedOctokit;
   }
 
-  logger.debug(`[createGitHubClientForRunner] Cache miss for ${key}`);
+  logger.debug(`[createGitHubClientForRunner] Cache miss for ${runnerOwner}`);
   const ghesBaseUrl = process.env.GHES_URL;
   let ghesApiUrl = '';
   if (ghesBaseUrl) {
@@ -29,21 +28,21 @@ async function getOrCreateOctokit(runner: RunnerInfo): Promise<Octokit> {
   const githubClientPre = await createOctoClient(ghAuthPre.token, ghesApiUrl);
 
   const installationId =
-    runner.type === 'Org'
+    runnerType === 'Org'
       ? (
           await githubClientPre.apps.getOrgInstallation({
-            org: runner.owner,
+            org: runnerOwner,
           })
         ).data.id
       : (
           await githubClientPre.apps.getRepoInstallation({
-            owner: runner.owner.split('/')[0],
-            repo: runner.owner.split('/')[1],
+            owner: runnerOwner.split('/')[0],
+            repo: runnerOwner.split('/')[1],
           })
         ).data.id;
   const ghAuth = await createGithubInstallationAuth(installationId, ghesApiUrl);
   const octokit = await createOctoClient(ghAuth.token, ghesApiUrl);
-  githubCache.clients.set(key, octokit);
+  githubCache.clients.set(runnerOwner, octokit);
 
   return octokit;
 }
@@ -66,28 +65,27 @@ async function getGitHubRunnerBusyState(client: Octokit, ec2runner: RunnerInfo, 
   return state.data.busy;
 }
 
-async function listGitHubRunners(runner: RunnerInfo): Promise<GhRunners> {
-  const key = runner.owner as string;
-  const cachedRunners = githubCache.runners.get(key);
+async function listGitHubRunners(runnerType: string, runnerOwner: string): Promise<GhRunners> {
+  const cachedRunners = githubCache.runners.get(runnerOwner);
   if (cachedRunners) {
-    logger.debug(`[listGithubRunners] Cache hit for ${key}`);
+    logger.debug(`[listGithubRunners] Cache hit for ${runnerOwner}`);
     return cachedRunners;
   }
 
-  logger.debug(`[listGithubRunners] Cache miss for ${key}`);
-  const client = await getOrCreateOctokit(runner);
+  logger.debug(`[listGithubRunners] Cache miss for ${runnerOwner}`);
+  const client = await getOrCreateOctokit(runnerType, runnerOwner);
   const runners =
-    runner.type === 'Org'
+    runnerType === 'Org'
       ? await client.paginate(client.actions.listSelfHostedRunnersForOrg, {
-          org: runner.owner,
+          org: runnerOwner,
           per_page: 100,
         })
       : await client.paginate(client.actions.listSelfHostedRunnersForRepo, {
-          owner: runner.owner.split('/')[0],
-          repo: runner.owner.split('/')[1],
+          owner: runnerOwner.split('/')[0],
+          repo: runnerOwner.split('/')[1],
           per_page: 100,
         });
-  githubCache.runners.set(key, runners);
+  githubCache.runners.set(runnerOwner, runners);
 
   return runners;
 }
@@ -100,7 +98,7 @@ function runnerMinimumTimeExceeded(runner: RunnerInfo): boolean {
 }
 
 async function removeRunner(ec2runner: RunnerInfo, ghRunnerIds: number[]): Promise<void> {
-  const githubAppClient = await getOrCreateOctokit(ec2runner);
+  const githubAppClient = await getOrCreateOctokit(ec2runner.type, ec2runner.owner);
   try {
     const states = await Promise.all(
       ghRunnerIds.map(async (ghRunnerId) => {
@@ -159,7 +157,7 @@ async function evaluateAndRemoveRunners(
     logger.debug(`Found: '${ec2RunnersFiltered.length}' active GitHub runners with owner tag: '${ownerTag}'`);
     for (const ec2Runner of ec2RunnersFiltered) {
       logger.debug(`Evaluating runner ${ec2Runner}`);
-      const ghRunners = await listGitHubRunners(ec2Runner);
+      const ghRunners = await listGitHubRunners(ec2Runner.type, ec2Runner.owner);
       const ghRunnersFiltered = ghRunners.filter((runner: { name: string }) =>
         runner.name.endsWith(ec2Runner.instanceId),
       );
@@ -218,6 +216,30 @@ function filterRunners(ec2runners: RunnerList[]): RunnerInfo[] {
   return ec2runners.filter((ec2Runner) => ec2Runner.type) as RunnerInfo[];
 }
 
+async function deleteOfflineRunners(runnerType: string, runnerOwner: string, runnerLabels: string[]): Promise<void> {
+  const ghRunners = await listGitHubRunners(runnerType, runnerOwner);
+  const githubAppClient = await getOrCreateOctokit(runnerType, runnerOwner);
+  await Promise.all(
+    ghRunners.map(async (ghRunner) => {
+      if (ghRunner.status !== 'offline') return null;
+      if (runnerLabels.length > 0 && !ghRunner.labels.every((label) => runnerLabels.includes(label.name))) return null;
+      logger.info(`Deleting runner ${ghRunner.name} with id ${ghRunner.id}`);
+      return (
+        runnerType === 'Org'
+          ? await githubAppClient.actions.deleteSelfHostedRunnerFromOrg({
+              runner_id: ghRunner.id,
+              org: runnerOwner,
+            })
+          : await githubAppClient.actions.deleteSelfHostedRunnerFromRepo({
+              runner_id: ghRunner.id,
+              owner: runnerOwner.split('/')[0],
+              repo: runnerOwner.split('/')[1],
+            })
+      ).status;
+    }),
+  );
+}
+
 export async function scaleDown(): Promise<void> {
   githubCache.reset();
   const scaleDownConfigs = JSON.parse(process.env.SCALE_DOWN_CONFIG) as [ScalingDownConfig];
@@ -227,14 +249,18 @@ export async function scaleDown(): Promise<void> {
   const activeEc2RunnersCount = ec2Runners.length;
   logger.info(`Found: '${activeEc2RunnersCount}' active GitHub EC2 runner instances before clean-up.`);
 
-  if (activeEc2RunnersCount === 0) {
+  if (activeEc2RunnersCount !== 0) {
+    const runners = filterRunners(ec2Runners);
+    await evaluateAndRemoveRunners(runners, scaleDownConfigs);
+
+    const activeEc2RunnersCountAfter = (await listRunners(environment)).length;
+    logger.info(`Found: '${activeEc2RunnersCountAfter}' active GitHub EC2 runners instances after clean-up.`);
+  } else {
     logger.debug(`No active runners found for environment: '${environment}'`);
-    return;
   }
 
-  const runners = filterRunners(ec2Runners);
-  await evaluateAndRemoveRunners(runners, scaleDownConfigs);
-
-  const activeEc2RunnersCountAfter = (await listRunners(environment)).length;
-  logger.info(`Found: '${activeEc2RunnersCountAfter}' active GitHub EC2 runners instances after clean-up.`);
+  if (process.env.RUNNER_TYPE && process.env.RUNNER_OWNER) {
+    const runnerLabels = (process.env.RUNNER_LABELS || '').split(',');
+    await deleteOfflineRunners(process.env.RUNNER_TYPE, process.env.RUNNER_OWNER, runnerLabels);
+  }
 }

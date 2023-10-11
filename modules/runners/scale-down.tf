@@ -33,6 +33,9 @@ resource "aws_lambda_function" "scale_down" {
       RUNNER_BOOT_TIME_IN_MINUTES          = var.runner_boot_time_in_minutes
       SCALE_DOWN_CONFIG                    = jsonencode(var.idle_config)
       SERVICE_NAME                         = "runners-scale-down"
+      RUNNER_TYPE                          = var.enable_ephemeral_runners ? "Org" : "Repo"
+      RUNNER_OWNER                         = var.runner_owner
+      RUNNER_LABELS                        = lower(var.runner_labels)
     }
   }
 
