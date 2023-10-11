@@ -220,6 +220,7 @@ module "runners" {
   runner_as_root                       = var.runner_as_root
   runner_run_as                        = var.runner_run_as
   runners_maximum_count                = var.runners_maximum_count
+  runner_owner                         = var.runner_owner
   idle_config                          = var.idle_config
   enable_ssm_on_runners                = var.enable_ssm_on_runners
   egress_rules                         = var.runner_egress_rules

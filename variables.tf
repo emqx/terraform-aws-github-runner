@@ -42,6 +42,12 @@ variable "enable_organization_runners" {
   default     = false
 }
 
+variable "runner_owner" {
+  description = "The owner of the runner. This can be either an organization or a user."
+  type        = string
+  default     = null
+}
+
 variable "github_app" {
   description = "GitHub app parameters, see your github app. Ensure the key is the base64-encoded `.pem` file (the output of `base64 app.private-key.pem`, not the content of `private-key.pem`)."
   type = object({

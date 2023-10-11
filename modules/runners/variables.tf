@@ -194,6 +194,12 @@ variable "enable_organization_runners" {
   type = bool
 }
 
+variable "runner_owner" {
+  description = "The owner of the runner. This can be either an organization or a user."
+  type        = string
+  default     = null
+}
+
 variable "github_app_parameters" {
   description = "Parameter Store for GitHub App Parameters."
   type = object({
