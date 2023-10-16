@@ -39,7 +39,7 @@ variable "associate_public_ip_address" {
 variable "instance_type" {
   description = "The instance type Packer will use for the builder"
   type        = string
-  default     = "t3.medium"
+  default     = "t4g.medium"
 }
 
 variable "root_volume_size_gb" {
@@ -96,7 +96,7 @@ locals {
 }
 
 source "amazon-ebs" "githubrunner" {
-  ami_name                                  = "github-runner-amd64-${formatdate("YYYYMMDDhhmm", timestamp())}"
+  ami_name                                  = "github-runner-arm64-${formatdate("YYYYMMDDhhmm", timestamp())}"
   instance_type                             = var.instance_type
   region                                    = var.region
   security_group_id                         = var.security_group_id
@@ -106,7 +106,7 @@ source "amazon-ebs" "githubrunner" {
 
   source_ami_filter {
     filters = {
-      name                = "*/ubuntu-jammy-22.04-amd64-server-*"
+      name                = "*/ubuntu-jammy-22.04-arm64-server-*"
       root-device-type    = "ebs"
       virtualization-type = "hvm"
     }
@@ -159,7 +159,7 @@ build {
       install_runner = templatefile("../../modules/runners/templates/install-runner.sh", {
         ARM_PATCH                       = ""
         S3_LOCATION_RUNNER_DISTRIBUTION = ""
-        RUNNER_ARCHITECTURE             = "x64"
+        RUNNER_ARCHITECTURE             = "arm64"
       })
     })
     destination = "/tmp/install-runner.sh"
@@ -167,7 +167,7 @@ build {
 
   provisioner "shell" {
     env = {
-      "RUNNER_TARBALL_URL" : "https://github.com/actions/runner/releases/download/v${local.runner_version}/actions-runner-linux-x64-${local.runner_version}.tar.gz"
+      "RUNNER_TARBALL_URL" : "https://github.com/actions/runner/releases/download/v${local.runner_version}/actions-runner-linux-arm64-${local.runner_version}.tar.gz"
     }
     inline = [
       "sudo chmod +x /tmp/install-runner.sh",

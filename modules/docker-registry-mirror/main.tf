@@ -1,6 +1,6 @@
 locals {
-  log_group_name = "/github-self-hosted-runners/${var.prefix}/cloud-init-output"
-  prefix = "${var.prefix}-docker-cache-proxy"
+  name = "docker-registry-mirror-${var.instance_arch}"
+  log_group_name = "/github-self-hosted-runners/${local.name}/cloud-init-output"
 }
 
 data "aws_ami" "ubuntu" {
@@ -9,7 +9,7 @@ data "aws_ami" "ubuntu" {
 
   filter {
     name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-${var.instance_arch}-server-*"]
   }
 
   filter {
@@ -25,16 +25,17 @@ data "aws_ami" "ubuntu" {
 
 resource "aws_instance" "this" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t3a.small"
+  instance_type          = var.instance_arch == "amd64" ? "t3a.small" : "t4g.small"
   subnet_id              = var.subnet_id
-  vpc_security_group_ids = var.security_group_ids
+  vpc_security_group_ids = [aws_security_group.instance-sg.id]
   iam_instance_profile   = aws_iam_instance_profile.this.name
   user_data              = templatefile("${path.module}/user_data.sh", {
     log_group_name = local.log_group_name
+    logging_retention_in_days = var.logging_retention_in_days
   })
 
   tags = {
-    Name = local.prefix
+    Name = local.name
   }
 
   root_block_device {
@@ -44,32 +45,69 @@ resource "aws_instance" "this" {
 }
 
 resource "aws_iam_role" "this" {
-  name = local.prefix
+  name = local.name
   assume_role_policy = templatefile("${path.module}/policies/instance-role-trust-policy.json", {})
 }
 
 resource "aws_iam_instance_profile" "this" {
-  name = local.prefix
+  name = local.name
   role = aws_iam_role.this.name
-  path = "/${var.prefix}/"
+  path = "/${local.name}/"
 }
 
 resource "aws_iam_role_policy" "ssm_session" {
-  name = "${local.prefix}-ssm-session"
+  name = "${local.name}-ssm-session"
   role   = aws_iam_role.this.name
   policy = templatefile("${path.module}/policies/instance-ssm-policy.json", {})
 }
 
 resource "aws_iam_role_policy" "cloudwatch" {
-  name = "${var.prefix}-cloudwatch"
+  name = "${local.name}-cloudwatch"
   role  = aws_iam_role.this.name
   policy = templatefile("${path.module}/policies/instance-cloudwatch-policy.json", {})
 }
 
 resource "aws_route53_record" "dns" {
   zone_id  = var.route53_zone_id
-  name     = "${aws_instance.this.tags_all["Name"]}.${var.route53_zone_name}"
+  name     = "docker-registry-mirror.${var.route53_zone_name}"
   type     = "A"
   ttl      = 30
   records  = [aws_instance.this.private_ip]
+}
+
+resource "aws_security_group" "instance-sg" {
+  vpc_id = var.vpc_id
+
+  egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  ingress {
+    protocol  = -1
+    self      = true
+    from_port = 0
+    to_port   = 0
+  }
+
+  ingress {
+    protocol  = "TCP"
+    from_port = 443
+    to_port   = 443
+    security_groups = var.ingress_security_group_ids
+  }
+
+  ingress {
+    protocol  = "TCP"
+    from_port = 22
+    to_port   = 22
+    security_groups = var.ingress_security_group_ids
+  }
+
+  tags = {
+    Name = "${local.name}-security-group"
+  }
 }

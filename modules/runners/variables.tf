@@ -666,7 +666,7 @@ variable "enable_jit_config" {
   default     = null
 }
 
-variable "docker_cache_proxy" {
-  type    = string
-  default = null
+variable "enable_docker_registry_mirror" {
+  type    = bool
+  default = false
 }

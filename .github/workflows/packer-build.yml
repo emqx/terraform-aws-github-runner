@@ -20,6 +20,7 @@ jobs:
       matrix:
         arch:
           - amd64
+          - arm64
     defaults:
       run:
         working-directory: images/emqx-${{ matrix.arch }}

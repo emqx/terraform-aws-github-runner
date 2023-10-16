@@ -1,4 +1,5 @@
 locals {
+  route53_zone_name = "${var.prefix}.io"
   tags = merge(
     {
       "Name" = format("%s-action-runner", var.prefix)
@@ -270,4 +271,25 @@ resource "aws_elasticache_cluster" "runner" {
   parameter_group_name = "default.redis7"
   maintenance_window   = "sun:01:00-sun:06:00"
   snapshot_retention_limit = 0
+}
+
+module "docker-registry-mirror" {
+  count              = var.enable_docker_registry_mirror ? 1 : 0
+  source             = "../docker-registry-mirror"
+  vpc_id             = var.vpc_id
+  subnet_id          = var.subnet_ids[0]
+  instance_arch      = var.runner_architecture == "x64" ? "amd64" : "arm64"
+  ingress_security_group_ids = var.enable_managed_runner_security_group ? [aws_security_group.runner_sg[0].id] : []
+  route53_zone_id    = aws_route53_zone.route53_zone.id
+  route53_zone_name  = aws_route53_zone.route53_zone.name
+}
+
+resource "aws_route53_zone" "route53_zone" {
+  name = local.route53_zone_name
+  vpc {
+    vpc_id = var.vpc_id
+  }
+  lifecycle {
+    ignore_changes = [vpc]
+  }
 }

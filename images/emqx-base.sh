@@ -1,6 +1,8 @@
 #!/bin/bash -e
 
 export DEBIAN_FRONTEND=noninteractive
+DPKG_ARCH=$(dpkg --print-architecture) # amd64/arm64
+UNAME_ARCH=$(uname -m) # x86_64/aarch64
 
 # Enable retry logic for apt up to 10 times
 echo "APT::Acquire::Retries \"10\";" > /etc/apt/apt.conf.d/80-retries
@@ -33,7 +35,7 @@ apt-get -y install --no-install-recommends python3 python3-pip python3-venv pyth
 
 # docker
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-echo deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable > /etc/apt/sources.list.d/docker.list
+echo deb [arch=$DPKG_ARCH signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable > /etc/apt/sources.list.d/docker.list
 apt-get -y update
 apt-get -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 cat << EOF > /usr/bin/docker-compose
@@ -56,39 +58,45 @@ echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://pack
 apt-get -y update && apt-get -y install redis
 
 # k8s tools
-curl -fsSLO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-install minikube-linux-amd64 /usr/local/bin/minikube
-curl -fsSLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-curl -fsSLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+curl -fsSLO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-$DPKG_ARCH
+install minikube-linux-$DPKG_ARCH /usr/local/bin/minikube
+curl -fsSLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/$DPKG_ARCH/kubectl"
+curl -fsSLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/$DPKG_ARCH/kubectl.sha256"
 echo "$(<kubectl.sha256) kubectl" | sha256sum --check
 install kubectl /usr/local/bin/kubectl
 
 curl -fsSL https://baltocdn.com/helm/signing.asc | gpg --dearmor -o /usr/share/keyrings/helm.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" > /etc/apt/sources.list.d/helm-stable-debian.list
+echo "deb [arch=$DPKG_ARCH signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" > /etc/apt/sources.list.d/helm-stable-debian.list
 apt-get -y update && apt-get -y install helm
 
 # java
 curl -fsSL https://apt.corretto.aws/corretto.key | gpg --dearmor -o /usr/share/keyrings/corretto.key
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/corretto.key] https://apt.corretto.aws stable main" > /etc/apt/sources.list.d/corretto.list
+echo "deb [arch=$DPKG_ARCH signed-by=/usr/share/keyrings/corretto.key] https://apt.corretto.aws stable main" > /etc/apt/sources.list.d/corretto.list
 apt-get -y update && apt-get -y install java-11-amazon-corretto-jdk maven
 
 # aws tools
-wget -q https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb -O /tmp/amazon-cloudwatch-agent.deb
+wget -q https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/$DPKG_ARCH/latest/amazon-cloudwatch-agent.deb -O /tmp/amazon-cloudwatch-agent.deb
 apt install /tmp/amazon-cloudwatch-agent.deb
 
-wget -q https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -O /tmp/awscliv2.zip
+wget -q https://awscli.amazonaws.com/awscli-exe-linux-$UNAME_ARCH.zip -O /tmp/awscliv2.zip
 unzip -q /tmp/awscliv2.zip -d /tmp
 /tmp/aws/install
 
-wget -q https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb -O /tmp/session-manager-plugin.deb
+SSM_ARCH=
+case "$DPKG_ARCH" in
+ amd64) SSM_ARCH=64bit ;;
+ arm64) SSM_ARCH=arm64 ;;
+esac
+
+wget -q https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_$SSM_ARCH/session-manager-plugin.deb -O /tmp/session-manager-plugin.deb
 apt install /tmp/session-manager-plugin.deb
 
 # github cli
-wget -q https://github.com/cli/cli/releases/download/v2.33.0/gh_2.33.0_linux_amd64.deb -O /tmp/gh.deb
+wget -q https://github.com/cli/cli/releases/download/v2.33.0/gh_2.33.0_linux_$DPKG_ARCH.deb -O /tmp/gh.deb
 apt install /tmp/gh.deb
 
 # yq
-wget -q https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /tmp/yq
+wget -q https://github.com/mikefarah/yq/releases/latest/download/yq_linux_$DPKG_ARCH -O /tmp/yq
 mv /tmp/yq /usr/bin/yq
 chmod +x /usr/bin/yq
 

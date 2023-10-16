@@ -40,9 +40,10 @@ resource "aws_ssm_parameter" "runner_group" {
   tags  = local.tags
 }
 
-resource "aws_ssm_parameter" "docker_cache_proxy" {
-  name  = "${var.ssm_paths.root}/${var.ssm_paths.config}/docker_cache_proxy"
+resource "aws_ssm_parameter" "runner_docker_registry_mirror" {
+  name  = "${var.ssm_paths.root}/${var.ssm_paths.config}/docker_registry_mirror"
   type  = "String"
-  value = var.docker_cache_proxy
+  value = var.enable_docker_registry_mirror ? module.docker-registry-mirror[0].hostname : null
   tags  = local.tags
 }
+
