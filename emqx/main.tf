@@ -49,7 +49,7 @@ module "runners" {
   ami_owners          = [data.aws_caller_identity.current.account_id]
   runner_os           = "linux"
   runner_architecture = "x64"
-  runner_extra_labels = "ephemeral"
+  runner_extra_labels = "ephemeral,aws-amd64"
   runner_owner        = "emqx"
 
   instance_types = ["m6a.large"]
@@ -71,7 +71,7 @@ module "runners" {
   runners_maximum_count           = 256
   scale_down_schedule_expression  = "cron(*/5 * * * ? *)"
   logging_retention_in_days       = 7
-  scale_up_reserved_concurrent_executions = 64
+  scale_up_reserved_concurrent_executions = 12
   # enable_user_data_debug_logging_runner = true
   # log_level                             = "debug"
 
