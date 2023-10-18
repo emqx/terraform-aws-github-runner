@@ -35,28 +35,31 @@ runner_redis_url=$(echo "$tags" | jq -r '.Tags[]  | select(.Key == "ghr:runner_r
 
 %{ endif }
 
-echo "ghr:environment = $environment"
-echo "ghr:ssm_config_path = $ssm_config_path"
-echo "ghr:runner_name_prefix = $runner_name_prefix"
-echo "ghr:runner_redis_url = $runner_redis_url"
+echo "ghr:environment: $environment"
+echo "ghr:ssm_config_path: $ssm_config_path"
+echo "ghr:runner_name_prefix: $runner_name_prefix"
+echo "ghr:runner_redis_url: $runner_redis_url"
 
-parameters=$(aws ssm get-parameters-by-path --path "$ssm_config_path" --region "$region" --query "Parameters[*].{Name:Name,Value:Value}")
-echo "Retrieved parameters from AWS SSM ($parameters)"
+parameters=$(aws ssm get-parameters-by-path --path "$ssm_config_path" --region "$region" --with-decryption --query "Parameters[*].{Name:Name,Value:Value}")
+echo "Retrieved parameters from AWS SSM"
 
-run_as=$(echo "$parameters" | jq -r '.[] | select(.Name == "'$ssm_config_path'/run_as") | .Value')
-echo "Retrieved /$ssm_config_path/run_as parameter - ($run_as)"
+run_as=$(echo "$parameters" | jq --arg ssm_config_path "$ssm_config_path" -r '.[] | select(.Name == "'$ssm_config_path'/run_as") | .Value')
+echo "$ssm_config_path/run_as: $run_as"
 
 enable_cloudwatch_agent=$(echo "$parameters" | jq --arg ssm_config_path "$ssm_config_path" -r '.[] | select(.Name == "'$ssm_config_path'/enable_cloudwatch") | .Value')
-echo "Retrieved /$ssm_config_path/enable_cloudwatch parameter - ($enable_cloudwatch_agent)"
+echo "$ssm_config_path/enable_cloudwatch: $enable_cloudwatch_agent"
 
 agent_mode=$(echo "$parameters" | jq --arg ssm_config_path "$ssm_config_path" -r '.[] | select(.Name == "'$ssm_config_path'/agent_mode") | .Value')
-echo "Retrieved /$ssm_config_path/agent_mode parameter - ($agent_mode)"
+echo "$ssm_config_path/agent_mode: $agent_mode"
 
 enable_jit_config=$(echo "$parameters" | jq --arg ssm_config_path "$ssm_config_path" -r '.[] | select(.Name == "'$ssm_config_path'/enable_jit_config") | .Value')
-echo "Retrieved /$ssm_config_path/enable_jit_config parameter - ($enable_jit_config)"
+echo "$ssm_config_path/enable_jit_config: $enable_jit_config"
 
-docker_cache_proxy=$(echo "$parameters" | jq --arg ssm_config_path "$ssm_config_path" -r '.[] | select(.Name == "'$ssm_config_path'/docker_cache_proxy") | .Value')
-echo "Retrieved /$ssm_config_path/docker_cache_proxy parameter - ($docker_cache_proxy)"
+docker_registry_mirror=$(echo "$parameters" | jq --arg ssm_config_path "$ssm_config_path" -r '.[] | select(.Name == "'$ssm_config_path'/docker_registry_mirror") | .Value')
+echo "$ssm_config_path/docker_registry_mirror: $docker_registry_mirror"
+
+docker_registry_mirror_cert=$(echo "$parameters" | jq --arg ssm_config_path "$ssm_config_path" -r '.[] | select(.Name == "'$ssm_config_path'/docker_registry_mirror_cert") | .Value')
+[ -n "$docker_registry_mirror_cert" ] && echo "$ssm_config_path/docker_registry_mirror_cert is configured"
 
 if [[ "$enable_cloudwatch_agent" == "true" ]]; then
   echo "Cloudwatch is enabled, initializing cloudwatch agent."
@@ -101,45 +104,41 @@ if [ -b /dev/nvme1n1 ]; then
     ln -s /data/_diag /opt/actions-runner/
 fi
 
-if [ -n "$docker_cache_proxy" ]; then
-  echo "Setting docker cache proxy to $docker_cache_proxy"
+if [ -n "$docker_registry_mirror" ]; then
+  echo "Setting docker registry mirror to $docker_registry_mirror"
   # See https://docs.docker.com/registry/recipes/mirror/
   tmp=$(mktemp)
-  jq --arg reg "http://$docker_cache_proxy,http://$docker_cache_proxy:81" '."registry-mirrors" = ($reg|split(","))' /etc/docker/daemon.json > "$tmp" && mv "$tmp" /etc/docker/daemon.json
-  tmp=$(mktemp)
-  jq --arg reg "$docker_cache_proxy,$docker_cache_proxy:81" '."insecure-registries" = ($reg|split(","))' /etc/docker/daemon.json > "$tmp" && mv "$tmp" /etc/docker/daemon.json
-
-  # without below config, docker buildx will fail when throttled by docker hub
-  # https://stackoverflow.com/questions/63409755/how-to-use-docker-buildx-pushing-image-to-registry-use-http-protocol#63411302
-  # https://github.com/docker/buildx/issues/1370
-  # https://docs.docker.com/build/buildkit/toml-configuration/
-  # https://github.com/moby/buildkit/blob/master/docs/buildkitd.toml.md
-  mkdir -p /home/$run_as/.docker/buildx
-  chown -R $run_as /home/$run_as/.docker
-  cat > /home/$run_as/.docker/buildx/buildkitd.default.toml <<EOF
-[registry."$docker_cache_proxy:80"]
-http = true
-insecure = true
-
-[registry."$docker_cache_proxy:81"]
-http = true
-insecure = true
-EOF
-
-  mkdir -p /root/.docker/buildx
-  cat > /root/.docker/buildx/buildkitd.default.toml <<EOF
-[registry."$docker_cache_proxy:80"]
-http = true
-insecure = true
-
-[registry."$docker_cache_proxy:81"]
+  if [ -n "$docker_registry_mirror_cert" ]; then
+    echo "Setting docker registry mirror cert"
+    mkdir -p "/etc/docker/certs.d/$docker_registry_mirror"
+    echo "$docker_registry_mirror_cert" > "/etc/docker/certs.d/$docker_registry_mirror/ca.crt"
+    jq --arg reg "https://$docker_registry_mirror" '."registry-mirrors" = ($reg|split(","))' /etc/docker/daemon.json > "$tmp" && mv "$tmp" /etc/docker/daemon.json
+  else
+    jq --arg reg "http://$docker_registry_mirror" '."registry-mirrors" = ($reg|split(","))' /etc/docker/daemon.json > "$tmp" && mv "$tmp" /etc/docker/daemon.json
+    # without below config, docker buildx will fail when throttled by docker hub
+    # https://stackoverflow.com/questions/63409755/how-to-use-docker-buildx-pushing-image-to-registry-use-http-protocol#63411302
+    # https://github.com/docker/buildx/issues/1370
+    # https://docs.docker.com/build/buildkit/toml-configuration/
+    # https://github.com/moby/buildkit/blob/master/docs/buildkitd.toml.md
+    mkdir -p /home/$run_as/.docker/buildx
+    chown -R $run_as /home/$run_as/.docker
+    cat > /home/$run_as/.docker/buildx/buildkitd.default.toml <<EOF
+[registry."$docker_registry_mirror:80"]
 http = true
 insecure = true
 EOF
 
-  # see https://github.com/docker/buildx/issues/1642
-  # remove when moby v25 is released
-  echo 'export DOCKER_BUILDKIT=0' >> /etc/environment
+    mkdir -p /root/.docker/buildx
+    cat > /root/.docker/buildx/buildkitd.default.toml <<EOF
+[registry."$docker_registry_mirror:80"]
+http = true
+insecure = true
+EOF
+
+    # see https://github.com/docker/buildx/issues/1642
+    # remove when moby v25 is released
+    echo 'export DOCKER_BUILDKIT=0' >> /etc/environment
+  fi
 fi
 
 systemctl restart docker.service

@@ -5,15 +5,16 @@
             "Effect": "Allow",
             "Action": [
                 "ssm:DescribeAssociation",
+                "ssm:DescribeDocument",
                 "ssm:GetDeployablePatchSnapshotForInstance",
                 "ssm:GetDocument",
-                "ssm:DescribeDocument",
                 "ssm:GetManifest",
+                "ssm:GetParameter",
                 "ssm:ListAssociations",
                 "ssm:ListInstanceAssociations",
-                "ssm:PutInventory",
                 "ssm:PutComplianceItems",
                 "ssm:PutConfigurePackageResult",
+                "ssm:PutInventory",
                 "ssm:UpdateAssociationStatus",
                 "ssm:UpdateInstanceAssociationStatus",
                 "ssm:UpdateInstanceInformation"

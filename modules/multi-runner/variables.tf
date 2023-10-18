@@ -51,6 +51,7 @@ variable "multi_runner_config" {
       enable_runner_binaries_syncer           = optional(bool, true)
       enable_ssm_on_runners                   = optional(bool, false)
       enable_userdata                         = optional(bool, true)
+      enable_docker_registry_mirror           = optional(bool, false)
       instance_allocation_strategy            = optional(string, "lowest-price")
       instance_max_spot_price                 = optional(string, null)
       instance_target_capacity_type           = optional(string, "spot")
@@ -553,6 +554,12 @@ variable "ssm_paths" {
 
 variable "lambda_tracing_mode" {
   description = "Enable X-Ray tracing for the lambda functions."
+  type        = string
+  default     = null
+}
+
+variable "runner_owner" {
+  description = "The owner of the runner, github user login or github org name."
   type        = string
   default     = null
 }

@@ -1,12 +1,10 @@
-data "aws_caller_identity" "current" {}
-
 locals {
-  environment       = "ci"
-  aws_region        = "eu-west-1"
-  prefix            = "ci"
-  route53_zone_name = "${local.prefix}.emqx.io"
-  vpc_cidr          = "10.0.0.0/16"
-  webhook_secret    = random_id.random.hex
+  environment         = "ci"
+  aws_region          = "eu-west-1"
+  prefix              = "ci"
+  vpc_cidr            = "10.0.0.0/16"
+  webhook_secret      = random_id.random.hex
+  multi_runner_config = { for c in fileset("${path.module}/templates/runner-configs", "*.yaml") : trimsuffix(c, ".yaml") => yamldecode(file("${path.module}/templates/runner-configs/${c}")) }
 }
 
 resource "random_id" "random" {
@@ -29,14 +27,17 @@ module "vpc" {
 }
 
 module "runners" {
-  source                    = "../"
-  aws_region                = local.aws_region
-  vpc_id                    = module.vpc.vpc_id
-  subnet_ids                = module.vpc.private_subnet_ids
-  lambda_subnet_ids         = module.vpc.private_subnet_ids
-  lambda_security_group_ids = [aws_security_group.lambda.id]
-
-  prefix = local.environment
+  source                            = "../modules/multi-runner"
+  multi_runner_config               = local.multi_runner_config
+  aws_region                        = local.aws_region
+  vpc_id                            = module.vpc.vpc_id
+  subnet_ids                        = module.vpc.private_subnet_ids
+  lambda_subnet_ids                 = module.vpc.private_subnet_ids
+  lambda_security_group_ids         = [aws_security_group.lambda.id]
+  runners_scale_up_lambda_timeout   = 60
+  runners_scale_down_lambda_timeout = 60
+  runner_owner                      = "emqx"
+  prefix                            = local.environment
 
   github_app = {
     key_base64     = var.github_app_key_base64
@@ -44,56 +45,10 @@ module "runners" {
     webhook_secret = local.webhook_secret
   }
 
-  enable_userdata     = false
-  ami_filter          = { name = ["github-runner-amd64-*"], state = ["available"] }
-  ami_owners          = [data.aws_caller_identity.current.account_id]
-  runner_os           = "linux"
-  runner_architecture = "x64"
-  runner_extra_labels = "ephemeral,aws-amd64"
-  runner_owner        = "emqx"
+  logging_retention_in_days = 7
 
-  instance_types = ["m6a.large"]
-
-  # disable binary syncer since github agent is already installed in the AMI.
-  enable_runner_binaries_syncer = false
-
-  # Let the module manage the service linked role
-  create_service_linked_role_spot = true
-
-  enable_ssm_on_runners           = true
-  enable_ephemeral_runners        = true
-  enable_organization_runners     = true
-  enable_job_queued_check         = true
-  enable_fifo_build_queue         = false
-  runner_run_as                   = "ubuntu"
-  delay_webhook_event             = 0
-  minimum_running_time_in_minutes = 2
-  runners_maximum_count           = 256
-  scale_down_schedule_expression  = "cron(*/5 * * * ? *)"
-  logging_retention_in_days       = 7
-  scale_up_reserved_concurrent_executions = 12
-  # enable_user_data_debug_logging_runner = true
-  # log_level                             = "debug"
-
-  # prefix GitHub runners with the environment name
-  runner_name_prefix = "${local.environment}_"
-
-  # configure the block device mappings, default for Amazon Linux2
-  block_device_mappings = [{
-    device_name           = "/dev/xvda"
-    delete_on_termination = true
-    volume_type           = "gp3"
-    volume_size           = 40
-    encrypted             = true
-    iops                  = null
-  }]
-
-  # Grab zip files via lambda_download
-  webhook_lambda_zip                = "../lambda_output/webhook.zip"
-  runners_lambda_zip                = "../lambda_output/runners.zip"
-  runner_binaries_syncer_lambda_zip = "../lambda_output/runner-binaries-syncer.zip"
-
-  docker_cache_proxy = module.docker-cache-proxy.hostname
+  webhook_lambda_zip = "../lambda_output/webhook.zip"
+  runners_lambda_zip = "../lambda_output/runners.zip"
 }
 
 resource "aws_security_group" "lambda" {
@@ -135,24 +90,4 @@ module "webhook-github-app" {
     webhook_secret = local.webhook_secret
   }
   webhook_endpoint = module.runners.webhook.endpoint
-}
-
-resource "aws_route53_zone" "route53_zone" {
-  name = local.route53_zone_name
-  vpc {
-    vpc_id = module.vpc.vpc_id
-  }
-  lifecycle {
-    ignore_changes = [vpc]
-  }
-}
-
-module "docker-cache-proxy" {
-  source             = "../modules/docker-cache-proxy"
-  prefix             = local.prefix
-  vpc_id             = module.vpc.vpc_id
-  subnet_id          = module.vpc.private_subnet_ids[0]
-  security_group_ids = [aws_security_group.lambda.id]
-  route53_zone_id    = aws_route53_zone.route53_zone.zone_id
-  route53_zone_name  = aws_route53_zone.route53_zone.name
 }

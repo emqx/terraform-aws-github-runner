@@ -92,12 +92,16 @@ module "runners" {
 
   runner_iam_role_managed_policy_arns = each.value.runner_config.runner_iam_role_managed_policy_arns
 
+  enable_docker_registry_mirror = each.value.runner_config.enable_docker_registry_mirror
+
   ghes_url        = var.ghes_url
   ghes_ssl_verify = var.ghes_ssl_verify
 
   kms_key_arn = var.kms_key_arn
 
   log_level = var.log_level
+
+  runner_owner = var.runner_owner
 
   pool_config                                = each.value.runner_config.pool_config
   pool_lambda_timeout                        = var.pool_lambda_timeout
