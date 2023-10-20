@@ -18,7 +18,7 @@ resource "aws_lambda_function" "check_pending" {
       ENVIRONMENT                          = var.prefix
       LOG_LEVEL                            = var.log_level
       POWERTOOLS_LOGGER_LOG_EVENT          = var.log_level == "debug" ? "true" : "false"
-      RUNNER_REDIS_URL                     = aws_elasticache_cluster.runner.cache_nodes[0].address
+      RUNNER_REDIS_URL                     = var.enable_docker_registry_mirror ? module.docker-registry-mirror[0].hostname : null
       ACTION_REQUEST_MAX_WAIT_TIME         = 180
       ACTION_REQUEST_MAX_REQUEUE_COUNT     = 15
       SERVICE_NAME                         = "runners-check-pending"

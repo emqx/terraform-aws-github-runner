@@ -102,6 +102,13 @@ resource "aws_security_group" "instance-sg" {
 
   ingress {
     protocol  = "TCP"
+    from_port = 6379
+    to_port   = 6379
+    security_groups = var.ingress_security_group_ids
+  }
+
+  ingress {
+    protocol  = "TCP"
     from_port = 22
     to_port   = 22
     security_groups = var.ingress_security_group_ids

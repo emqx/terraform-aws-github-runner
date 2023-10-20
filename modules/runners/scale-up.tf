@@ -39,7 +39,7 @@ resource "aws_lambda_function" "scale_up" {
       RUNNER_GROUP_NAME                    = var.runner_group_name
       RUNNER_NAME_PREFIX                   = var.runner_name_prefix
       RUNNERS_MAXIMUM_COUNT                = var.runners_maximum_count
-      RUNNER_REDIS_URL                     = aws_elasticache_cluster.runner.cache_nodes[0].address
+      RUNNER_REDIS_URL                     = var.enable_docker_registry_mirror ? module.docker-registry-mirror[0].hostname : null
       SERVICE_NAME                         = "runners-scale-up"
       SSM_TOKEN_PATH                       = "${var.ssm_paths.root}/${var.ssm_paths.tokens}"
       SSM_CONFIG_PATH                      = "${var.ssm_paths.root}/${var.ssm_paths.config}"
