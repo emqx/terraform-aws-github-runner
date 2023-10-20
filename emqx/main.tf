@@ -31,7 +31,7 @@ module "runners" {
   multi_runner_config               = local.multi_runner_config
   aws_region                        = local.aws_region
   vpc_id                            = module.vpc.vpc_id
-  subnet_ids                        = module.vpc.private_subnet_ids
+  subnet_ids                        = module.vpc.public_subnet_ids
   lambda_subnet_ids                 = module.vpc.private_subnet_ids
   lambda_security_group_ids         = [aws_security_group.lambda.id]
   runners_scale_up_lambda_timeout   = 60
