@@ -1,5 +1,34 @@
 # Changelog
 
+## [4.6.0](https://github.com/philips-labs/terraform-aws-github-runner/compare/v4.5.1...v4.6.0) (2023-10-19)
+
+
+### Features
+
+* Use Instance Metadata Service Version 2 by default. ([#3513](https://github.com/philips-labs/terraform-aws-github-runner/issues/3513)) ([d8d69c3](https://github.com/philips-labs/terraform-aws-github-runner/commit/d8d69c34b0492f125a9d23689e356d04021fe434))
+
+## [4.5.1](https://github.com/philips-labs/terraform-aws-github-runner/compare/v4.5.0...v4.5.1) (2023-10-18)
+
+
+### Bug Fixes
+
+* **lambda:** bump the aws group in /lambdas with 5 updates ([#3530](https://github.com/philips-labs/terraform-aws-github-runner/issues/3530)) ([0ada33b](https://github.com/philips-labs/terraform-aws-github-runner/commit/0ada33b99270da88716e7b4a381fae6d7a06fdd3))
+* **webhook:** Avoid jobs are accepted without labels ([#3548](https://github.com/philips-labs/terraform-aws-github-runner/issues/3548)) ([cb78738](https://github.com/philips-labs/terraform-aws-github-runner/commit/cb7873819b660be99b336c7ee486405b5cb3c2cb))
+
+## [4.5.0](https://github.com/philips-labs/terraform-aws-github-runner/compare/v4.4.1...v4.5.0) (2023-10-04)
+
+
+### Features
+
+* namespace EC2 tags ([#3523](https://github.com/philips-labs/terraform-aws-github-runner/issues/3523)) ([35aa73a](https://github.com/philips-labs/terraform-aws-github-runner/commit/35aa73ac1e6df30d4a5c314457da5646a117131b))
+
+
+### Bug Fixes
+
+* **lambda:** Bump @aws-lambda-powertools/logger from 1.12.1 to 1.14.0 in /lambdas ([#3521](https://github.com/philips-labs/terraform-aws-github-runner/issues/3521)) ([3f42529](https://github.com/philips-labs/terraform-aws-github-runner/commit/3f425297c4458d3dc31f45d1a22302ba39c59000))
+* **lambda:** Bump the aws group in /lambdas with 5 updates ([#3525](https://github.com/philips-labs/terraform-aws-github-runner/issues/3525)) ([1b24342](https://github.com/philips-labs/terraform-aws-github-runner/commit/1b243426fdb76fc9fff2d244df357f15bbbb7b24))
+* **lambda:** Bump the octokit group in /lambdas with 1 update ([#3519](https://github.com/philips-labs/terraform-aws-github-runner/issues/3519)) ([cde80cd](https://github.com/philips-labs/terraform-aws-github-runner/commit/cde80cd9e6144e5b6c11f055e601521f277a4932))
+
 ## [4.4.1](https://github.com/philips-labs/terraform-aws-github-runner/compare/v4.4.0...v4.4.1) (2023-09-28)
 
 
