@@ -234,6 +234,7 @@ resource "aws_security_group" "runner_sg" {
 module "docker-registry-mirror" {
   count              = var.enable_docker_registry_mirror ? 1 : 0
   source             = "../docker-registry-mirror"
+  prefix             = var.prefix
   vpc_id             = var.vpc_id
   subnet_id          = var.subnet_ids[0]
   instance_arch      = var.runner_architecture == "x64" ? "amd64" : "arm64"
