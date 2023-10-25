@@ -231,10 +231,15 @@ cat >/opt/start-runner-service.sh <<-EOF
   fi
 
   echo "Runner has finished"
-  echo "Stopping cloudwatch service"
-  systemctl stop amazon-cloudwatch-agent.service
-  echo "Terminating instance"
-  aws ec2 terminate-instances --instance-ids "$instance_id" --region "$region"
+  keep=$(aws ec2 describe-tags --region "$region" --filters "Name=resource-id,Values=$instance_id" "Name=key,Values=ghr:keep" --query 'Tags[0].Value' --output text)
+  if [ "$keep" = "true" ]; then
+    echo "The instance is marked for keeping it running."
+  else
+    echo "Stopping cloudwatch service"
+    systemctl stop amazon-cloudwatch-agent.service
+    echo "Terminating instance"
+    aws ec2 terminate-instances --instance-ids "$instance_id" --region "$region"
+  fi
 EOF
   # Starting the runner via a own process to ensure this process terminates
   nohup bash /opt/start-runner-service.sh &

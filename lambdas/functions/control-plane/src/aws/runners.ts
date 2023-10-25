@@ -84,6 +84,7 @@ function getRunnerInfo(runningInstances: DescribeInstancesResult) {
             type: i.Tags?.find((e) => e.Key === 'ghr:Type')?.Value as string,
             repo: i.Tags?.find((e) => e.Key === 'ghr:Repo')?.Value as string,
             org: i.Tags?.find((e) => e.Key === 'ghr:Org')?.Value as string,
+            keep: i.Tags?.find((e) => e.Key === 'ghr:keep')?.Value as string,
           });
         }
       }
