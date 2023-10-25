@@ -152,7 +152,7 @@ async function evaluateAndRemoveRunners(
 
   for (const ownerTag of ownerTags) {
     const ec2RunnersFiltered = ec2Runners
-      .filter((runner) => runner.owner === ownerTag)
+      .filter((runner) => runner.owner === ownerTag && runner.keep !== 'true')
       .sort(evictionStrategy === 'oldest_first' ? oldestFirstStrategy : newestFirstStrategy);
     logger.debug(`Found: '${ec2RunnersFiltered.length}' active GitHub runners with owner tag: '${ownerTag}'`);
     for (const ec2Runner of ec2RunnersFiltered) {

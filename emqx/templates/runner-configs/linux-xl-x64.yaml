@@ -1,7 +1,7 @@
 matcherConfig:
   exactMatch: true
   labelMatchers:
-    - [self-hosted, linux, x64, ephemeral, aws-amd64]
+    - [self-hosted, linux, x64, ephemeral-xl]
 fifo: false
 delay_webhook_event: 0
 redrive_build_queue:
@@ -10,7 +10,7 @@ redrive_build_queue:
 runner_config:
   runner_os: linux
   runner_architecture: x64
-  runner_extra_labels: ephemeral,aws-amd64
+  runner_extra_labels: ephemeral-xl
   runner_run_as: ubuntu
   runner_name_prefix: ci_
   enable_ssm_on_runners: true
@@ -23,13 +23,10 @@ runner_config:
   credit_specification: standard
   minimum_running_time_in_minutes: 2
   instance_types:
-    - m7a.large
-    - m7i.large
-    - m7i-flex.large
-    - m6a.large
-    - m6i.large
-  runners_maximum_count: 256
-  scale_up_reserved_concurrent_executions: 12
+    - c7a.xlarge
+    - c7i.xlarge
+  runners_maximum_count: 12
+  scale_up_reserved_concurrent_executions: 2
   scale_down_schedule_expression: cron(*/5 * * * ? *)
   ami_owners:
     - "self"

@@ -1,5 +1,5 @@
 locals {
-  name = "docker-registry-mirror-${var.instance_arch}"
+  name = "${var.prefix}-docker-registry-mirror"
   log_group_name = "/github-self-hosted-runners/${local.name}/cloud-init-output"
 }
 
