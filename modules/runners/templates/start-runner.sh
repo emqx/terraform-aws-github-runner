@@ -186,22 +186,22 @@ journalctl -u docker.service --no-pager
 
 EOF
 
-runner_s3_bucket=id-emqx-test
-if [ -n "$runner_s3_bucket" ]; then
-    if aws s3api head-object --bucket "$runner_s3_bucket" --key job_started_hook.sh; then
-        echo "Found job_started_hook.sh in $runner_s3_bucket, adding extra commands to $JOB_STARTED_HOOK"
-        aws s3 cp s3://$s3_bucket_name/job_started_hook.sh /tmp/job_started_hook.sh
-        cat /tmp/job_started_hook.sh >> $JOB_STARTED_HOOK
-    fi
-    if aws s3api head-object --bucket "$runner_s3_bucket" --key job_completed_hook.sh; then
-        echo "Found job_completed_hook.sh in $runner_s3_bucket, adding extra commands to $JOB_COMPLETED_HOOK"
-        aws s3 cp s3://$s3_bucket_name/job_completed_hook.sh /tmp/job_completed_hook.sh
-        cat /tmp/job_completed_hook.sh >> $JOB_COMPLETED_HOOK
-    fi
-fi
+# runner_s3_bucket=id-emqx-test
+# if [ -n "$runner_s3_bucket" ]; then
+#     if aws s3api head-object --bucket "$runner_s3_bucket" --key job_started_hook.sh; then
+#         echo "Found job_started_hook.sh in $runner_s3_bucket, adding extra commands to $JOB_STARTED_HOOK"
+#         aws s3 cp s3://$s3_bucket_name/job_started_hook.sh /tmp/job_started_hook.sh
+#         cat /tmp/job_started_hook.sh >> $JOB_STARTED_HOOK
+#     fi
+#     if aws s3api head-object --bucket "$runner_s3_bucket" --key job_completed_hook.sh; then
+#         echo "Found job_completed_hook.sh in $runner_s3_bucket, adding extra commands to $JOB_COMPLETED_HOOK"
+#         aws s3 cp s3://$s3_bucket_name/job_completed_hook.sh /tmp/job_completed_hook.sh
+#         cat /tmp/job_completed_hook.sh >> $JOB_COMPLETED_HOOK
+#     fi
+# fi
 
-chmod a+x $JOB_STARTED_HOOK
-chmod a+x $JOB_COMPLETED_HOOK
+chown $run_as $JOB_STARTED_HOOK $JOB_COMPLETED_HOOK
+chmod a+x $JOB_STARTED_HOOK $JOB_COMPLETED_HOOK
 
 echo "ACTIONS_RUNNER_HOOK_JOB_STARTED=$JOB_STARTED_HOOK" >> /opt/actions-runner/.env
 echo "ACTIONS_RUNNER_HOOK_JOB_COMPLETED=$JOB_COMPLETED_HOOK" >> /opt/actions-runner/.env
@@ -231,8 +231,8 @@ cat >/opt/start-runner-service.sh <<-EOF
   fi
 
   echo "Runner has finished"
-  keep=$(aws ec2 describe-tags --region "$region" --filters "Name=resource-id,Values=$instance_id" "Name=key,Values=ghr:keep" --query 'Tags[0].Value' --output text)
-  if [ "$keep" = "true" ]; then
+  keep=\$(aws ec2 describe-tags --region "$region" --filters "Name=resource-id,Values=$instance_id" "Name=key,Values=ghr:keep" --query 'Tags[0].Value' --output text)
+  if [ "\$keep" = "true" ]; then
     echo "The instance is marked for keeping it running."
   else
     echo "Stopping cloudwatch service"
