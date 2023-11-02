@@ -23,14 +23,14 @@ echo '* hard nofile 65536' >> /etc/security/limits.conf
 echo '* soft stack 16384' >> /etc/security/limits.conf
 echo '* hard stack 16384' >> /etc/security/limits.conf
 
-apt-get -y update
+apt -y update
 apt-get -y install apt-transport-https ca-certificates software-properties-common
 # https://github.com/ilikenwf/apt-fast
 add-apt-repository ppa:apt-fast/stable
 apt-get -y update
 apt-get -y install apt-fast
 apt-get -y install curl gnupg lsb-release jq git unzip curl wget net-tools dnsutils
-apt-get -y install build-essential autoconf automake cmake
+apt-get -y install build-essential autoconf automake cmake pkg-config
 apt-get -y install --no-install-recommends python3 python3-pip python3-venv python-is-python3
 
 # docker
@@ -103,6 +103,9 @@ chmod +x /usr/bin/yq
 systemctl restart snapd.socket
 systemctl restart snapd
 snap set system refresh.hold="$(date --date='today+60 days' +%Y-%m-%dT%H:%M:%S%:z)"
+
+apt -y update
+redis-cli -h
 
 # Stop and disable apt-daily upgrade services;
 systemctl stop apt-daily.timer
