@@ -35,7 +35,7 @@ resource "aws_lambda_function" "check_pending" {
   }
 
   dynamic "tracing_config" {
-    for_each = var.lambda_tracing_mode != null ? [true] : []
+    for_each = var.tracing_config.mode != null ? [true] : []
     content {
       mode = var.lambda_tracing_mode
     }
@@ -105,7 +105,7 @@ resource "aws_iam_role_policy" "check_pending_logging" {
 }
 
 resource "aws_iam_role_policy" "check_pending_xray" {
-  count  = var.lambda_tracing_mode != null ? 1 : 0
+  count  = var.tracing_config.mode != null ? 1 : 0
   policy = data.aws_iam_policy_document.lambda_xray[0].json
   role   = aws_iam_role.check_pending.name
 }

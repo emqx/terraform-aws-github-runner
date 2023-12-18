@@ -55,6 +55,8 @@ interface CreateEC2RunnerConfig {
   numberOfRunners?: number;
   amiIdSsmParameterName?: string;
   tags?: Tag[];
+  tracingEnabled?: boolean;
+  onDemandFailoverOnError?: string[];
 }
 
 function generateRunnerServiceConfig(githubRunnerConfig: CreateGitHubRunnerConfig, token: string) {
@@ -234,6 +236,7 @@ export async function createRunners(
   const instances = await createRunner({
     runnerType: githubRunnerConfig.runnerType,
     runnerOwner: githubRunnerConfig.runnerOwner,
+    numberOfRunners: 1,
     ...ec2RunnerConfig,
   });
   if (instances.length !== 0) {
@@ -266,6 +269,10 @@ export async function scaleUp(eventSource: string, payload: ActionRequestMessage
   const runnerNamePrefix = process.env.RUNNER_NAME_PREFIX || '';
   const ssmConfigPath = process.env.SSM_CONFIG_PATH || '';
   const redisUrl = process.env.RUNNER_REDIS_URL;
+  const tracingEnabled = yn(process.env.POWERTOOLS_TRACE_ENABLED, { default: false });
+  const onDemandFailoverOnError = process.env.ENABLE_ON_DEMAND_FAILOVER_FOR_ERRORS
+    ? (JSON.parse(process.env.ENABLE_ON_DEMAND_FAILOVER_FOR_ERRORS) as [string])
+    : [];
 
   if (ephemeralEnabled && payload.eventType !== 'workflow_job') {
     logger.warn(`${payload.eventType} event is not supported in combination with ephemeral runners.`);
@@ -282,6 +289,7 @@ export async function scaleUp(eventSource: string, payload: ActionRequestMessage
     runner: {
       type: runnerType,
       owner: runnerOwner,
+      namePrefix: runnerNamePrefix,
     },
     github: {
       event: payload.eventType,
@@ -345,6 +353,8 @@ export async function scaleUp(eventSource: string, payload: ActionRequestMessage
           launchTemplateName,
           subnets,
           amiIdSsmParameterName,
+          tracingEnabled,
+          onDemandFailoverOnError,
         },
         githubInstallationClient,
         redis,
@@ -376,7 +386,7 @@ async function createStartRunnerConfig(
 function addDelay(instances: string[]) {
   const delay = async (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const ssmParameterStoreMaxThroughput = 40;
-  const isDelay = instances.length >= ssmParameterStoreMaxThroughput ? true : false;
+  const isDelay = instances.length >= ssmParameterStoreMaxThroughput;
   return { isDelay, delay };
 }
 
