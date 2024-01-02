@@ -22,10 +22,13 @@ runner_config:
   credit_specification: standard
   minimum_running_time_in_minutes: 2
   instance_types:
-    - c7a.xlarge
-    - c7i.xlarge
-  runners_maximum_count: 12
-  scale_up_reserved_concurrent_executions: 2
+    - m7a.xlarge
+    - m7i.xlarge
+    - m7i-flex.xlarge
+    - m6a.xlarge
+    - m6i.xlarge
+  runners_maximum_count: 24
+  scale_up_reserved_concurrent_executions: 6
   scale_down_schedule_expression: cron(*/5 * * * ? *)
   ami_owners:
     - "self"
