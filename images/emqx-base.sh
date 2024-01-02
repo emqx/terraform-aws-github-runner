@@ -29,7 +29,7 @@ apt-get -y install apt-transport-https ca-certificates software-properties-commo
 add-apt-repository ppa:apt-fast/stable
 apt-get -y update
 apt-get -y install apt-fast
-apt-get -y install curl gnupg lsb-release jq git unzip curl wget net-tools dnsutils
+apt-get -y install curl gnupg lsb-release jq git zip unzip curl wget net-tools dnsutils
 apt-get -y install build-essential autoconf automake cmake pkg-config
 apt-get -y install --no-install-recommends python3 python3-pip python3-venv python-is-python3
 
