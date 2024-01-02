@@ -13,13 +13,10 @@ import { Octokit } from '@octokit/rest';
 import { createChildLogger } from '@terraform-aws-github-runner/aws-powertools-util';
 import { getParameter } from '@terraform-aws-github-runner/aws-ssm-util';
 
-import { axiosFetch } from '../axios/fetch-override';
-
 const logger = createChildLogger('gh-auth');
 export async function createOctoClient(token: string, ghesApiUrl = ''): Promise<Octokit> {
   const ocktokitOptions: OctokitOptions = {
     auth: token,
-    request: { fetch: axiosFetch },
   };
   if (ghesApiUrl) {
     ocktokitOptions.baseUrl = ghesApiUrl;
@@ -66,12 +63,7 @@ async function createAuth(installationId: number | undefined, ghesApiUrl: string
   if (ghesApiUrl) {
     authOptions.request = request.defaults({
       baseUrl: ghesApiUrl,
-      request: {
-        fetch: axiosFetch,
-      },
     });
-  } else {
-    authOptions.request = request.defaults({ request: { fetch: axiosFetch } });
   }
   return createAppAuth(authOptions);
 }
