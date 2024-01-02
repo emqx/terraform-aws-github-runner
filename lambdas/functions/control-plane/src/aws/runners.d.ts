@@ -39,7 +39,9 @@ export interface RunnerInputParameters {
     maxSpotPrice?: string;
     instanceAllocationStrategy: SpotAllocationStrategy;
   };
-  numberOfRunners?: number;
+  numberOfRunners: number;
   amiIdSsmParameterName?: string;
   tags?: Tag[];
+  tracingEnabled?: boolean;
+  onDemandFailoverOnError?: string[];
 }

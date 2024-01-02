@@ -38,6 +38,10 @@ module "runners" {
   runners_scale_down_lambda_timeout = 60
   runner_owner                      = "emqx"
   prefix                            = local.environment
+  runners_ssm_housekeeper           = {
+    enabled = false
+    config = {}
+  }
 
   github_app = {
     key_base64     = var.github_app_key_base64

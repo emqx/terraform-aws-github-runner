@@ -1,5 +1,138 @@
 # Changelog
 
+## [5.5.2](https://github.com/philips-labs/terraform-aws-github-runner/compare/v5.5.1...v5.5.2) (2023-12-16)
+
+
+### Bug Fixes
+
+* **lambda:** bump the aws group in /lambdas with 5 updates ([#3661](https://github.com/philips-labs/terraform-aws-github-runner/issues/3661)) ([81da0be](https://github.com/philips-labs/terraform-aws-github-runner/commit/81da0becd678079e23d0e67a66b8a85a93d09101))
+* **lambda:** bump the octokit group in /lambdas with 1 update ([#3662](https://github.com/philips-labs/terraform-aws-github-runner/issues/3662)) ([76697e6](https://github.com/philips-labs/terraform-aws-github-runner/commit/76697e69c41dd3524496977869c0b6aaa6a07d36))
+
+## [5.5.1](https://github.com/philips-labs/terraform-aws-github-runner/compare/v5.5.0...v5.5.1) (2023-12-07)
+
+
+### Bug Fixes
+
+* **lambda:** bump the aws group in /lambdas with 5 updates ([#3647](https://github.com/philips-labs/terraform-aws-github-runner/issues/3647)) ([aa0de8d](https://github.com/philips-labs/terraform-aws-github-runner/commit/aa0de8d4f742cf0cc61e87010d70d8aca056f687))
+* **lambda:** bump the octokit group in /lambdas with 1 update ([#3648](https://github.com/philips-labs/terraform-aws-github-runner/issues/3648)) ([e5dc96b](https://github.com/philips-labs/terraform-aws-github-runner/commit/e5dc96b49af98da1630aa96bbde0f2589b145941))
+
+## [5.5.0](https://github.com/philips-labs/terraform-aws-github-runner/compare/v5.4.2...v5.5.0) (2023-11-30)
+
+
+### Features
+
+* add failover to on-demand in case request is failing ([#3409](https://github.com/philips-labs/terraform-aws-github-runner/issues/3409)) ([d71e631](https://github.com/philips-labs/terraform-aws-github-runner/commit/d71e631f3befe7aa15a56c52ba8ead2be71be460))
+
+
+### Bug Fixes
+
+* add runner name prefix to context of scale-up lambda ([#3644](https://github.com/philips-labs/terraform-aws-github-runner/issues/3644)) ([2936edd](https://github.com/philips-labs/terraform-aws-github-runner/commit/2936edde98bbd19349396ec575d810caa4f75efb))
+* **lambda:** bump the aws group in /lambdas with 5 updates ([#3635](https://github.com/philips-labs/terraform-aws-github-runner/issues/3635)) ([9615e53](https://github.com/philips-labs/terraform-aws-github-runner/commit/9615e53af45ae80884ea02570603dd9e614140d4))
+* **lambda:** bump the octokit group in /lambdas with 1 update ([#3636](https://github.com/philips-labs/terraform-aws-github-runner/issues/3636)) ([876db0c](https://github.com/philips-labs/terraform-aws-github-runner/commit/876db0ce2bf6f39ab3eb4264512086aafbeb65f1))
+
+## [5.4.2](https://github.com/philips-labs/terraform-aws-github-runner/compare/v5.4.1...v5.4.2) (2023-11-26)
+
+
+### Bug Fixes
+
+* **examples:** webhook-github-app multiple character args ([#3625](https://github.com/philips-labs/terraform-aws-github-runner/issues/3625)) ([941682e](https://github.com/philips-labs/terraform-aws-github-runner/commit/941682e8ffa04df6976f8f2f9e91ffe3aa4f6b66))
+* **lambda:** bump @aws-lambda-powertools/tracer from 1.14.2 to 1.16.0 in /lambdas ([#3622](https://github.com/philips-labs/terraform-aws-github-runner/issues/3622)) ([ba73565](https://github.com/philips-labs/terraform-aws-github-runner/commit/ba73565220179dd685c19d5c0cb57634f9d24fa8))
+* **lambda:** bump the aws group in /lambdas with 5 updates ([#3620](https://github.com/philips-labs/terraform-aws-github-runner/issues/3620)) ([1b944d5](https://github.com/philips-labs/terraform-aws-github-runner/commit/1b944d59bbbed7a6b60ba4d205440ff730208230))
+* **lambda:** bump the octokit group in /lambdas with 2 updates ([#3621](https://github.com/philips-labs/terraform-aws-github-runner/issues/3621)) ([c54e8c8](https://github.com/philips-labs/terraform-aws-github-runner/commit/c54e8c896b4f6a19dcc15172671fdf31de6e371d))
+
+## [5.4.1](https://github.com/philips-labs/terraform-aws-github-runner/compare/v5.4.0...v5.4.1) (2023-11-17)
+
+
+### Bug Fixes
+
+* **lambda:** bump @aws-lambda-powertools/logger from 1.14.0 to 1.14.2 in /lambdas ([#3611](https://github.com/philips-labs/terraform-aws-github-runner/issues/3611)) ([1292c6b](https://github.com/philips-labs/terraform-aws-github-runner/commit/1292c6bf262c088be70119857327f332ddfea4ec))
+* **lambda:** bump @middy/core from 3.6.2 to 4.7.0 in /lambdas ([#3609](https://github.com/philips-labs/terraform-aws-github-runner/issues/3609)) ([2d0f039](https://github.com/philips-labs/terraform-aws-github-runner/commit/2d0f039f6b2e0b0bec4cb501e4797820c26531e8))
+* **lambda:** bump axios from 1.5.1 to 1.6.0 in /lambdas ([#3604](https://github.com/philips-labs/terraform-aws-github-runner/issues/3604)) ([a316b82](https://github.com/philips-labs/terraform-aws-github-runner/commit/a316b8226cb05f5ed9b586549892fa0ab4cb52b8))
+* **lambda:** bump axios from 1.6.0 to 1.6.1 in /lambdas ([#3612](https://github.com/philips-labs/terraform-aws-github-runner/issues/3612)) ([ab3627f](https://github.com/philips-labs/terraform-aws-github-runner/commit/ab3627f989564aa65efaa6b33c666870a9710aa8))
+* remove unused environment variable ([#3616](https://github.com/philips-labs/terraform-aws-github-runner/issues/3616)) ([bb68562](https://github.com/philips-labs/terraform-aws-github-runner/commit/bb68562953304dc1f6a6d6d5d2309db5e1e823c0))
+
+## [5.4.0](https://github.com/philips-labs/terraform-aws-github-runner/compare/v5.3.0...v5.4.0) (2023-11-08)
+
+
+### Features
+
+* added changes to enable tracing in lambdas. ([#3554](https://github.com/philips-labs/terraform-aws-github-runner/issues/3554)) ([970e8a6](https://github.com/philips-labs/terraform-aws-github-runner/commit/970e8a657a9a3d62966c75c6738eba7292c77aa8))
+
+
+### Bug Fixes
+
+* **lambda:** Bump the aws group in /lambdas with 5 updates ([#3595](https://github.com/philips-labs/terraform-aws-github-runner/issues/3595)) ([581a4bf](https://github.com/philips-labs/terraform-aws-github-runner/commit/581a4bff74a22c6d9577c35c6bb683d26cfd5cff))
+
+## [5.3.0](https://github.com/philips-labs/terraform-aws-github-runner/compare/v5.2.1...v5.3.0) (2023-11-03)
+
+
+### Features
+
+* order label matchers for multi-runners ([#3591](https://github.com/philips-labs/terraform-aws-github-runner/issues/3591)) ([1829721](https://github.com/philips-labs/terraform-aws-github-runner/commit/1829721cb647b005ca44b5feb8d0de27217e6074))
+
+## [5.2.1](https://github.com/philips-labs/terraform-aws-github-runner/compare/v5.2.0...v5.2.1) (2023-10-31)
+
+
+### Bug Fixes
+
+* shorten role name for ssm housekeeper ([#3587](https://github.com/philips-labs/terraform-aws-github-runner/issues/3587)) ([a1440b5](https://github.com/philips-labs/terraform-aws-github-runner/commit/a1440b5a1b329e65e860292895714cc3f072a1bb))
+
+## [5.2.0](https://github.com/philips-labs/terraform-aws-github-runner/compare/v5.1.0...v5.2.0) (2023-10-30)
+
+
+### Features
+
+* SSM housekeeper ([#3577](https://github.com/philips-labs/terraform-aws-github-runner/issues/3577)) ([340deea](https://github.com/philips-labs/terraform-aws-github-runner/commit/340deeaee94fa9cddbe11d9421cb06c35f2a2726))
+
+
+### Bug Fixes
+
+* allow use of associate_public_ipv4_address from top-level module ([#3572](https://github.com/philips-labs/terraform-aws-github-runner/issues/3572)) ([0ff7b23](https://github.com/philips-labs/terraform-aws-github-runner/commit/0ff7b2389fcbb607cdc37392b1612a14e9511c43))
+
+## [5.1.0](https://github.com/philips-labs/terraform-aws-github-runner/compare/v5.0.0...v5.1.0) (2023-10-30)
+
+
+### Features
+
+* add AMI house keeping lambda ([#3570](https://github.com/philips-labs/terraform-aws-github-runner/issues/3570)) ([87104e8](https://github.com/philips-labs/terraform-aws-github-runner/commit/87104e8c09a9aaa6069be85c9b68920e455ff715))
+
+
+### Bug Fixes
+
+* **lambda:** bump the aws group in /lambdas with 5 updates ([#3579](https://github.com/philips-labs/terraform-aws-github-runner/issues/3579)) ([ccb1d32](https://github.com/philips-labs/terraform-aws-github-runner/commit/ccb1d32be888a28d37417275950afdc01c4ac0da))
+
+## [5.0.0](https://github.com/philips-labs/terraform-aws-github-runner/compare/v4.7.0...v5.0.0) (2023-10-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove depcrecated input and output variables ([#3567](https://github.com/philips-labs/terraform-aws-github-runner/issues/3567))
+* Change runner labels to list[string] and apply TFLint ([#3410](https://github.com/philips-labs/terraform-aws-github-runner/issues/3410))
+* replace Amazon Linux 2 by Amazon Linux 2023 as default Linux AMI ([#3437](https://github.com/philips-labs/terraform-aws-github-runner/issues/3437))
+
+### Features
+
+* replace Amazon Linux 2 by Amazon Linux 2023 as default Linux AMI ([#3437](https://github.com/philips-labs/terraform-aws-github-runner/issues/3437)) ([35219f5](https://github.com/philips-labs/terraform-aws-github-runner/commit/35219f5b35dcdd780e1a7d3d6b109933914233da))
+
+
+### Bug Fixes
+
+* Change runner labels to list[string] and apply TFLint ([#3410](https://github.com/philips-labs/terraform-aws-github-runner/issues/3410)) ([0b398f2](https://github.com/philips-labs/terraform-aws-github-runner/commit/0b398f2f1010e0af84022a6d11d696cdcb9eb1ec))
+* remove depcrecated input and output variables ([#3567](https://github.com/philips-labs/terraform-aws-github-runner/issues/3567)) ([89c8575](https://github.com/philips-labs/terraform-aws-github-runner/commit/89c8575bf5df80c9a0861ff63e72a5762edbdcfc))
+
+## [4.7.0](https://github.com/philips-labs/terraform-aws-github-runner/compare/v4.6.0...v4.7.0) (2023-10-26)
+
+
+### Features
+
+* Add public IP association to github runner ([#3547](https://github.com/philips-labs/terraform-aws-github-runner/issues/3547)) ([1a25b2c](https://github.com/philips-labs/terraform-aws-github-runner/commit/1a25b2c6bced8ab4657ace64ef0b6694140856de))
+
+
+### Bug Fixes
+
+* add tags to aws resources ([#3549](https://github.com/philips-labs/terraform-aws-github-runner/issues/3549)) ([c747139](https://github.com/philips-labs/terraform-aws-github-runner/commit/c74713923635d51e37cca98449a396a73f71a7bc))
+* restrict runner security group to only ingress ([#3564](https://github.com/philips-labs/terraform-aws-github-runner/issues/3564)) ([e63fdc5](https://github.com/philips-labs/terraform-aws-github-runner/commit/e63fdc5ec3b85f2b1fa9a4f881588681fee0c07d))
+
 ## [4.6.0](https://github.com/philips-labs/terraform-aws-github-runner/compare/v4.5.1...v4.6.0) (2023-10-19)
 
 

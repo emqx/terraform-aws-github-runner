@@ -14,7 +14,6 @@ import { createChildLogger } from '@terraform-aws-github-runner/aws-powertools-u
 import { getParameter } from '@terraform-aws-github-runner/aws-ssm-util';
 
 const logger = createChildLogger('gh-auth');
-
 export async function createOctoClient(token: string, ghesApiUrl = ''): Promise<Octokit> {
   const ocktokitOptions: OctokitOptions = {
     auth: token,
