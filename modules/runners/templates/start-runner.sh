@@ -302,17 +302,13 @@ cat > $JOB_STARTED_HOOK <<EOF
 #!/bin/bash
 set -x
 df -h
-redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:ts"
-redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:payload"
-redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:requeue_count"
-
+sudo netstat -tuln
 EOF
 
 cat > $JOB_COMPLETED_HOOK <<EOF
 #!/bin/bash
 set -x
 journalctl -u docker.service --no-pager
-
 EOF
 
 chown $run_as $JOB_STARTED_HOOK $JOB_COMPLETED_HOOK
