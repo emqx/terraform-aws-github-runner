@@ -3,6 +3,8 @@ on:
   push:
     tags:
       - emqx*
+  schedule:
+    - cron: '0 8 * * 0'
   workflow_dispatch:
 
 jobs:
@@ -43,6 +45,14 @@ jobs:
         run: |
           packer init .
           packer build github_agent.pkr.hcl
+      - name: Send notification to Slack
+        uses: slackapi/slack-github-action@6c661ce58804a1a20f6dc5fbee7f0381b469e001 # v1.25.0
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          payload: |
+            {"text": "Build of github runners ${{ matrix.arch }} AMI failed: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
 
   deploy:
     name: Deploy
@@ -72,6 +82,14 @@ jobs:
           terraform init
           terraform refresh
           terraform apply -auto-approve
+      - name: Send notification to Slack
+        uses: slackapi/slack-github-action@6c661ce58804a1a20f6dc5fbee7f0381b469e001 # v1.25.0
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          payload: |
+            {"text": "Github runners deploy failed: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
 
   ami-gc:
     name: Deregister oldest AMI
