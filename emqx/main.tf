@@ -39,8 +39,8 @@ module "runners" {
   runner_owner                      = "emqx"
   prefix                            = local.environment
   runners_ssm_housekeeper = {
-    state   = "DISABLED"
-    config  = {}
+    state  = "DISABLED"
+    config = {}
   }
 
   github_app = {
