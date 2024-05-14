@@ -123,12 +123,15 @@ module "ssm" {
 
 module "webhook" {
   source = "./modules/webhook"
-
+  ssm_paths = {
+    root    = local.ssm_root_path
+    webhook = var.ssm_paths.webhook
+  }
   prefix      = var.prefix
   tags        = local.tags
   kms_key_arn = var.kms_key_arn
 
-  runner_config = {
+  runner_matcher_config = {
     (aws_sqs_queue.queued_builds.id) = {
       id : aws_sqs_queue.queued_builds.id
       arn : aws_sqs_queue.queued_builds.arn
@@ -152,6 +155,7 @@ module "webhook" {
   lambda_runtime                                = var.lambda_runtime
   lambda_architecture                           = var.lambda_architecture
   lambda_zip                                    = var.webhook_lambda_zip
+  lambda_memory_size                            = var.webhook_lambda_memory_size
   lambda_timeout                                = var.webhook_lambda_timeout
   tracing_config                                = var.tracing_config
   logging_retention_in_days                     = var.logging_retention_in_days
@@ -235,6 +239,8 @@ module "runners" {
   lambda_runtime                   = var.lambda_runtime
   lambda_architecture              = var.lambda_architecture
   lambda_zip                       = var.runners_lambda_zip
+  lambda_scale_up_memory_size      = coalesce(var.runners_scale_up_Lambda_memory_size, var.runners_scale_up_lambda_memory_size)
+  lambda_scale_down_memory_size    = var.runners_scale_down_lambda_memory_size
   lambda_timeout_scale_up          = var.runners_scale_up_lambda_timeout
   lambda_timeout_scale_down        = var.runners_scale_down_lambda_timeout
   lambda_subnet_ids                = var.lambda_subnet_ids
@@ -259,6 +265,7 @@ module "runners" {
   enable_userdata                = var.enable_userdata
   enable_user_data_debug_logging = var.enable_user_data_debug_logging_runner
   userdata_template              = var.userdata_template
+  userdata_content               = var.userdata_content
   userdata_pre_install           = var.userdata_pre_install
   userdata_post_install          = var.userdata_post_install
   key_name                       = var.key_name
@@ -276,6 +283,7 @@ module "runners" {
   log_level = var.log_level
 
   pool_config                                = var.pool_config
+  pool_lambda_memory_size                    = var.pool_lambda_memory_size
   pool_lambda_timeout                        = var.pool_lambda_timeout
   pool_runner_owner                          = var.pool_runner_owner
   pool_lambda_reserved_concurrent_executions = var.pool_lambda_reserved_concurrent_executions
@@ -305,12 +313,13 @@ module "runner_binaries" {
   lambda_runtime                  = var.lambda_runtime
   lambda_architecture             = var.lambda_architecture
   lambda_zip                      = var.runner_binaries_syncer_lambda_zip
+  lambda_memory_size              = var.runner_binaries_syncer_lambda_memory_size
   lambda_timeout                  = var.runner_binaries_syncer_lambda_timeout
   tracing_config                  = var.tracing_config
   logging_retention_in_days       = var.logging_retention_in_days
   logging_kms_key_id              = var.logging_kms_key_id
 
-  enable_event_rule_binaries_syncer    = var.enable_event_rule_binaries_syncer
+  state_event_rule_binaries_syncer     = var.state_event_rule_binaries_syncer
   server_side_encryption_configuration = var.runner_binaries_s3_sse_configuration
   s3_versioning                        = var.runner_binaries_s3_versioning
 
@@ -356,4 +365,32 @@ module "ami_housekeeper" {
 
   cleanup_config             = var.ami_housekeeper_cleanup_config
   lambda_schedule_expression = var.ami_housekeeper_lambda_schedule_expression
+}
+
+locals {
+  lambda_instance_termination_watcher = {
+    prefix                    = var.prefix
+    tags                      = local.tags
+    aws_partition             = var.aws_partition
+    architecture              = var.lambda_architecture
+    principals                = var.lambda_principals
+    runtime                   = var.lambda_runtime
+    security_group_ids        = var.lambda_security_group_ids
+    subnet_ids                = var.lambda_subnet_ids
+    log_level                 = var.log_level
+    logging_kms_key_id        = var.logging_kms_key_id
+    logging_retention_in_days = var.logging_retention_in_days
+    role_path                 = var.role_path
+    role_permissions_boundary = var.role_permissions_boundary
+    metrics_namespace         = var.metrics_namespace
+    s3_bucket                 = var.lambda_s3_bucket
+    tracing_config            = var.tracing_config
+  }
+}
+
+module "instance_termination_watcher" {
+  source = "./modules/termination-watcher"
+  count  = var.instance_termination_watcher.enable ? 1 : 0
+
+  config = merge(local.lambda_instance_termination_watcher, var.instance_termination_watcher)
 }

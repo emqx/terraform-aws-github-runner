@@ -71,6 +71,7 @@ variable "multi_runner_config" {
       scale_down_schedule_expression          = optional(string, "cron(*/5 * * * ? *)")
       scale_up_reserved_concurrent_executions = optional(number, 1)
       userdata_template                       = optional(string, null)
+      userdata_content                        = optional(string, null)
       enable_jit_config                       = optional(bool, null)
       enable_runner_detailed_monitoring       = optional(bool, false)
       enable_cloudwatch_agent                 = optional(bool, true)
@@ -79,6 +80,8 @@ variable "multi_runner_config" {
       userdata_post_install                   = optional(string, "")
       runner_ec2_tags                         = optional(map(string), {})
       runner_iam_role_managed_policy_arns     = optional(list(string), [])
+      vpc_id                                  = optional(string, null)
+      subnet_ids                              = optional(list(string), null)
       idle_config = optional(list(object({
         cron             = string
         timeZone         = string
@@ -154,11 +157,11 @@ variable "multi_runner_config" {
         runner_additional_security_group_ids: "List of additional security groups IDs to apply to the runner. If added outside the multi_runner_config block, the additional security group(s) will be applied to all runner configs. If added inside the multi_runner_config, the additional security group(s) will be applied to the individual runner."
         runner_as_root: "Run the action runner under the root user. Variable `runner_run_as` will be ignored."
         runner_boot_time_in_minutes: "The minimum time for an EC2 runner to boot and register as a runner."
-        runner_extra_labels: "Extra (custom) labels for the runners (GitHub). Separate each label by a comma. Labels checks on the webhook can be enforced by setting `enable_workflow_job_labels_check`. GitHub read-only labels should not be provided."
+        runner_extra_labels: "Extra (custom) labels for the runners (GitHub). Separate each label by a comma. Labels checks on the webhook can be enforced by setting `multi_runner_config.matcherConfig.exactMatch`. GitHub read-only labels should not be provided."
         runner_group_name: "Name of the runner group."
         runner_name_prefix: "Prefix for the GitHub runner name."
         runner_run_as: "Run the GitHub actions agent as user."
-        runners_maximum_count: "The maximum number of runners that will be created."
+        runners_maximum_count: "The maximum number of runners that will be created. Setting the variable to `-1` desiables the maximum check."
         scale_down_schedule_expression: "Scheduler expression to check every x for scale down."
         scale_up_reserved_concurrent_executions: "Amount of reserved concurrent executions for the scale-up lambda function. A value of 0 disables lambda from being triggered and -1 removes any concurrency limitations."
         userdata_template: "Alternative user-data template, replacing the default template. By providing your own user_data you have to take care of installing all required software, including the action runner. Variables userdata_pre/post_install are ignored."
@@ -170,6 +173,8 @@ variable "multi_runner_config" {
         userdata_post_install: "Script to be ran after the GitHub Actions runner is installed on the EC2 instances"
         runner_ec2_tags: "Map of tags that will be added to the launch template instance tag specifications."
         runner_iam_role_managed_policy_arns: "Attach AWS or customer-managed IAM policies (by ARN) to the runner IAM role"
+        vpc_id: "The VPC for security groups of the action runners. If not set uses the value of `var.vpc_id`."
+        subnet_ids: "List of subnets in which the action runners will be launched, the subnets needs to be subnets in the `vpc_id`. If not set, uses the value of `var.subnet_ids`."
         idle_config: "List of time period that can be defined as cron expression to keep a minimum amount of runners active instead of scaling down to 0. By defining this list you can ensure that in time periods that match the cron expression within 5 seconds a runner is kept idle."
         runner_log_files: "(optional) Replaces the module default cloudwatch log config. See https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Agent-Configuration-File-Details.html for details."
         block_device_mappings: "The EC2 instance block device configuration. Takes the following keys: `device_name`, `delete_on_termination`, `volume_type`, `volume_size`, `encrypted`, `iops`, `throughput`, `kms_key_id`, `snapshot_id`."
@@ -186,10 +191,22 @@ variable "multi_runner_config" {
   EOT
 }
 
+variable "scale_up_lambda_memory_size" {
+  description = "Memory size limit in MB for scale_up lambda."
+  type        = number
+  default     = 512
+}
+
 variable "runners_scale_up_lambda_timeout" {
   description = "Time out for the scale up lambda in seconds."
   type        = number
   default     = 30
+}
+
+variable "scale_down_lambda_memory_size" {
+  description = "Memory size limit in MB for scale down."
+  type        = number
+  default     = 512
 }
 
 variable "runners_scale_down_lambda_timeout" {
@@ -202,6 +219,12 @@ variable "webhook_lambda_zip" {
   description = "File location of the webhook lambda zip file."
   type        = string
   default     = null
+}
+
+variable "webhook_lambda_memory_size" {
+  description = "Memory size limit in MB for webhook lambda."
+  type        = number
+  default     = 256
 }
 
 variable "webhook_lambda_timeout" {
@@ -288,7 +311,7 @@ variable "log_level" {
 variable "lambda_runtime" {
   description = "AWS Lambda runtime."
   type        = string
-  default     = "nodejs18.x"
+  default     = "nodejs20.x"
 }
 
 variable "lambda_architecture" {
@@ -334,6 +357,12 @@ variable "runner_binaries_s3_versioning" {
   default     = "Disabled"
 }
 
+variable "runner_binaries_syncer_memory_size" {
+  description = "Memory size limit in MB for binary syncer lambda."
+  type        = number
+  default     = 256
+}
+
 variable "runner_binaries_syncer_lambda_timeout" {
   description = "Time out of the binaries sync lambda in seconds."
   type        = number
@@ -352,10 +381,15 @@ variable "syncer_lambda_s3_object_version" {
   default     = null
 }
 
-variable "enable_event_rule_binaries_syncer" {
-  type        = bool
-  default     = true
+variable "state_event_rule_binaries_syncer" {
+  type        = string
   description = "Option to disable EventBridge Lambda trigger for the binary syncer, useful to stop automatic updates of binary distribution"
+  default     = "ENABLED"
+
+  validation {
+    condition     = contains(["ENABLED", "DISABLED", "ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS"], var.state_event_rule_binaries_syncer)
+    error_message = "`state_event_rule_binaries_syncer` value is not valid, valid values are: `ENABLED`, `DISABLED`, `ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS`."
+  }
 }
 
 variable "queue_encryption" {
@@ -534,6 +568,7 @@ variable "ssm_paths" {
     root    = optional(string, "github-action-runners")
     app     = optional(string, "app")
     runners = optional(string, "runners")
+    webhook = optional(string, "webhook")
   })
   default = {}
 }
@@ -559,13 +594,15 @@ variable "runners_ssm_housekeeper" {
   Configuration for the SSM housekeeper lambda. This lambda deletes token / JIT config from SSM.
 
   `schedule_expression`: is used to configure the schedule for the lambda.
-  `enabled`: enable or disable the lambda trigger via the EventBridge.
+  `state`: state of the cloudwatch event rule. Valid values are `DISABLED`, `ENABLED`, and `ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS`.
+  `lambda_memory_size`: lambda memery size limit.
   `lambda_timeout`: timeout for the lambda in seconds.
   `config`: configuration for the lambda function. Token path will be read by default from the module.
   EOF
   type = object({
     schedule_expression = optional(string, "rate(1 day)")
-    enabled             = optional(bool, true)
+    state               = optional(string, "ENABLED")
+    lambda_memory_size  = optional(number, 512)
     lambda_timeout      = optional(number, 60)
     config = object({
       tokenPath      = optional(string)
@@ -580,4 +617,37 @@ variable "runner_owner" {
   description = "The owner of the runner, github user login or github org name."
   type        = string
   default     = null
+}
+
+variable "metrics_namespace" {
+  description = "The namespace for the metrics created by the module. Merics will only be created if explicit enabled."
+  type        = string
+  default     = "GitHub Runners"
+}
+
+variable "instance_termination_watcher" {
+  description = <<-EOF
+    Configuration for the spot termination watcher lambda function. This feature is Beta, changes will not trigger a major release as long in beta.
+
+    `enable`: Enable or disable the spot termination watcher.
+    'enable_metrics': Enable metric for the lambda. If `spot_warning` is set to true, the lambda will emit a metric when it detects a spot termination warning.
+    `memory_size`: Memory size linit in MB of the lambda.
+    `s3_key`: S3 key for syncer lambda function. Required if using S3 bucket to specify lambdas.
+    `s3_object_version`: S3 object version for syncer lambda function. Useful if S3 versioning is enabled on source bucket.
+    `timeout`: Time out of the lambda in seconds.
+    `zip`: File location of the lambda zip file.
+  EOF
+
+  type = object({
+    enable = optional(bool, false)
+    enable_metric = optional(object({
+      spot_warning = optional(bool, false)
+    }))
+    memory_size       = optional(number, null)
+    s3_key            = optional(string, null)
+    s3_object_version = optional(string, null)
+    timeout           = optional(number, null)
+    zip               = optional(string, null)
+  })
+  default = {}
 }

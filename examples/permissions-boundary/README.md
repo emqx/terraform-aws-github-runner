@@ -4,11 +4,6 @@ This module shows how to create GitHub action runners with permissions boundarie
 
 ## Usages
 
-Steps for the full setup, such as creating a GitHub app can be find the module [README](../../README.md). First create the deploy role and boundary policies. These steps require an admin user.
-
-> Ensure you have set the version in `lambdas-download/main.tf` for running the example. The version needs to be set to a GitHub release version, see https://github.com/philips-labs/terraform-aws-github-runner/releases
-
-
 ```bash
 cd setup
 terraform init
@@ -40,7 +35,7 @@ terraform apply
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 5.2 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 5.27 |
 | <a name="requirement_local"></a> [local](#requirement\_local) | ~> 2.0 |
 | <a name="requirement_random"></a> [random](#requirement\_random) | ~> 3.0 |
 
@@ -48,8 +43,8 @@ terraform apply
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | 5.2.0 |
-| <a name="provider_random"></a> [random](#provider\_random) | 3.5.1 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 5.31.0 |
+| <a name="provider_random"></a> [random](#provider\_random) | 3.6.0 |
 | <a name="provider_terraform"></a> [terraform](#provider\_terraform) | n/a |
 
 ## Modules

@@ -18,7 +18,7 @@ resource "aws_lambda_function" "syncer" {
   handler           = "index.handler"
   runtime           = var.lambda_runtime
   timeout           = var.lambda_timeout
-  memory_size       = 256
+  memory_size       = var.lambda_memory_size
   architectures     = [var.lambda_architecture]
 
   environment {
@@ -124,7 +124,7 @@ resource "aws_cloudwatch_event_rule" "syncer" {
   name                = "${var.prefix}-syncer-rule"
   schedule_expression = var.lambda_schedule_expression
   tags                = var.tags
-  is_enabled          = var.enable_event_rule_binaries_syncer
+  state               = var.state_event_rule_binaries_syncer
 }
 
 resource "aws_cloudwatch_event_target" "syncer" {

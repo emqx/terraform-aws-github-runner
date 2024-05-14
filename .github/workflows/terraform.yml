@@ -14,33 +14,201 @@ env:
   AWS_REGION: eu-west-1
 jobs:
   verify_module:
+    if: github.repository_owner != 'emqx'
     name: Verify module
+    strategy:
+      matrix:
+        terraform: [1.5.6, "latest"]
     runs-on: ubuntu-latest
     container:
-      image: hashicorp/terraform:1.5.3
+      image: hashicorp/terraform:${{ matrix.terraform }}
     steps:
       - name: "Checkout"
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
       - name: "Fake zip files" # Validate will fail if it cannot find the zip files
         run: |
           touch lambdas/functions/webhook/webhook.zip
           touch lambdas/functions/control-plane/runners.zip
           touch lambdas/functions/gh-agent-syncer/runner-binaries-syncer.zip
           touch lambdas/functions/ami-housekeeper/ami-housekeeper.zip
+          touch lambdas/functions/termination-watcher/termination-watcher.zip
+      - name: terraform init
+        run: terraform init -get -backend=false -input=false
+      - if: contains(matrix.terraform, '1.5.')
+        name: check terraform formatting
+        run: terraform fmt -recursive -check=true -write=false
+      - if: contains(matrix.terraform, 'latest') # check formatting for the latest release but avoid failing the build
+        name: check terraform formatting
+        run: terraform fmt -recursive -check=true -write=false
+        continue-on-error: true
+      - name: validate terraform
+        run: terraform validate
+      - if: contains(matrix.terraform, '1.5.')
+        name: Fix for actions/cache on alpine
+        run: apk add --no-cache tar
+        continue-on-error: true
+      - if: contains(matrix.terraform, '1.5.')
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        name: Cache TFLint plugin dir
+        with:
+          path: ~/.tflint.d/plugins
+          key: tflint-${{ hashFiles('.tflint.hcl') }}
+      - if: contains(matrix.terraform, '1.5.')
+        name: Setup TFLint
+        uses: terraform-linters/setup-tflint@19a52fbac37dacb22a09518e4ef6ee234f2d4987 # v4.0.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - if: contains(matrix.terraform, '1.5.')
+        name: Run TFLint
+        run: |
+          tflint --init -c ${GITHUB_WORKSPACE}/.tflint.hcl
+          tflint -c ${GITHUB_WORKSPACE}/.tflint.hcl --var-file ${GITHUB_WORKSPACE}/.github/lint/tflint.tfvars
+
+  verify_modules:
+    if: github.repository_owner != 'emqx'
+    name: Verify modules
+    strategy:
+      fail-fast: false
+      matrix:
+        terraform: [1.5.6, "latest"]
+        module:
+          [
+            "ami-housekeeper",
+            "download-lambda",
+            "lambda",
+            "multi-runner",
+            "runner-binaries-syncer",
+            "runners",
+            "setup-iam-permissions",
+            "ssm",
+            "termination-watcher",
+            "webhook",
+          ]
+    defaults:
+      run:
+        working-directory: modules/${{ matrix.module }}
+    runs-on: ubuntu-latest
+    container:
+      image: hashicorp/terraform:${{ matrix.terraform }}
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+      - name: terraform init
+        run: terraform init -get -backend=false -input=false
+      - if: contains(matrix.terraform, '1.3.')
+        name: check terraform formatting
+        run: terraform fmt -recursive -check=true -write=false
+      - if: contains(matrix.terraform, 'latest') # check formatting for the latest release but avoid failing the build
+        name: check terraform formatting
+        run: terraform fmt -recursive -check=true -write=false
+        continue-on-error: true
+      - name: validate terraform
+        run: terraform validate
+      - if: contains(matrix.terraform, '1.3.')
+        name: Fix for actions/cache on alpine
+        run: apk add --no-cache tar
+        continue-on-error: true
+      - if: contains(matrix.terraform, '1.3.')
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        name: Cache TFLint plugin dir
+        with:
+          path: ~/.tflint.d/plugins
+          key: tflint-${{ hashFiles('.tflint.hcl') }}
+      - if: contains(matrix.terraform, '1.3.')
+        name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - if: contains(matrix.terraform, '1.3.')
+        name: Run TFLint
+        working-directory: ${{ github.workspace }}
+        run: |
+          tflint --init -c ${GITHUB_WORKSPACE}/.tflint.hcl --chdir modules/${{ matrix.module }}
+          tflint -f compact -c ${GITHUB_WORKSPACE}/.tflint.hcl --var-file ${GITHUB_WORKSPACE}/.github/lint/tflint.tfvars --chdir modules/${{ matrix.module }}
+
+  verify_examples:
+    if: github.repository_owner != 'emqx'
+    name: Verify examples
+    strategy:
+      fail-fast: false
+      matrix:
+        terraform: [1.5.6, "latest"]
+        example:
+          [
+            "default",
+            "ubuntu",
+            "prebuilt",
+            "arm64",
+            "ephemeral",
+            "termination-watcher",
+            "windows",
+            "multi-runner",
+          ]
+    defaults:
+      run:
+        working-directory: examples/${{ matrix.example }}
+    runs-on: ubuntu-latest
+    container:
+      image: hashicorp/terraform:${{ matrix.terraform }}
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+      - name: terraform init
+        run: terraform init -get -backend=false -input=false
+      - if: contains(matrix.terraform, '1.5.')
+        name: check terraform formatting
+        run: terraform fmt -recursive -check=true -write=false
+      - if: contains(matrix.terraform, 'latest') # check formatting for the latest release but avoid failing the build
+        name: check terraform formatting
+        run: terraform fmt -recursive -check=true -write=false
+        continue-on-error: true
+      - name: validate terraform
+        run: terraform validate
+      - if: contains(matrix.terraform, '1.5.')
+        name: Fix for actions/cache on alpine
+        run: apk add --no-cache tar
+        continue-on-error: true
+      - if: contains(matrix.terraform, '1.5.')
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        name: Cache TFLint plugin dir
+        with:
+          path: ~/.tflint.d/plugins
+          key: tflint-${{ hashFiles('.tflint.hcl') }}
+      - if: contains(matrix.terraform, '1.5.')
+        name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - if: contains(matrix.terraform, '1.5.')
+        name: Run TFLint
+        working-directory: ${{ github.workspace }}
+        run: |
+          tflint --init -c ${GITHUB_WORKSPACE}/.tflint.hcl --chdir modules/${{ matrix.module }}
+          tflint -f compact -c ${GITHUB_WORKSPACE}/.tflint.hcl --var-file ${GITHUB_WORKSPACE}/.github/lint/tflint.tfvars --chdir examples/${{ matrix.example }}
+
+  verify_emqx:
+    if: github.repository_owner == 'emqx'
+    name: Verify emqx module
+    strategy:
+      matrix:
+        terraform: [1.5.6]
+    runs-on: ubuntu-latest
+    container:
+      image: hashicorp/terraform:${{ matrix.terraform }}
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+      - name: "Fake zip files" # Validate will fail if it cannot find the zip files
+        run: |
+          touch lambdas/functions/webhook/webhook.zip
+          touch lambdas/functions/control-plane/runners.zip
+          touch lambdas/functions/gh-agent-syncer/runner-binaries-syncer.zip
+          touch lambdas/functions/ami-housekeeper/ami-housekeeper.zip
+          touch lambdas/functions/termination-watcher/termination-watcher.zip
       - name: terraform init
         working-directory: emqx
         run: terraform init -get -backend=false -input=false
       - name: check terraform formatting
         working-directory: emqx
         run: terraform fmt -recursive -check=true -write=false
-        continue-on-error: true
       - name: validate terraform
         working-directory: emqx
         run: terraform validate
-      - name: Setup TFLint
-        uses: terraform-linters/setup-tflint@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run TFLint
-        working-directory: emqx
-        run: tflint -f compact

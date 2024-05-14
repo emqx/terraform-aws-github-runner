@@ -7,3 +7,8 @@ variable "github_app_id" {
   type      = string
   sensitive = true
 }
+
+variable "webhook_secret" {
+  type      = string
+  sensitive = true
+}

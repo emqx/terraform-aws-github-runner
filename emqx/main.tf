@@ -3,7 +3,7 @@ locals {
   aws_region          = "eu-west-1"
   prefix              = "ci"
   vpc_cidr            = "10.0.0.0/16"
-  webhook_secret      = random_id.random.hex
+  webhook_secret      = var.webhook_secret
   multi_runner_config = { for c in fileset("${path.module}/templates/runner-configs", "*.yaml") : trimsuffix(c, ".yaml") => yamldecode(file("${path.module}/templates/runner-configs/${c}")) }
 }
 
@@ -38,8 +38,8 @@ module "runners" {
   runners_scale_down_lambda_timeout = 60
   runner_owner                      = "emqx"
   prefix                            = local.environment
-  runners_ssm_housekeeper           = {
-    enabled = false
+  runners_ssm_housekeeper = {
+    state  = "DISABLED"
     config = {}
   }
 

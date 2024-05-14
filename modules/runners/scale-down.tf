@@ -17,7 +17,7 @@ resource "aws_lambda_function" "scale_down" {
   runtime           = var.lambda_runtime
   timeout           = var.lambda_timeout_scale_down
   tags              = local.tags
-  memory_size       = 512
+  memory_size       = var.lambda_scale_down_memory_size
   architectures     = [var.lambda_architecture]
 
   environment {
@@ -36,6 +36,7 @@ resource "aws_lambda_function" "scale_down" {
       RUNNER_TYPE                              = var.enable_ephemeral_runners ? "Org" : "Repo"
       RUNNER_OWNER                             = var.runner_owner
       RUNNER_LABELS                            = join(",", var.runner_labels)
+      POWERTOOLS_SERVICE_NAME                  = "runners-scale-down"
       POWERTOOLS_TRACE_ENABLED                 = var.tracing_config.mode != null ? true : false
       POWERTOOLS_TRACER_CAPTURE_HTTPS_REQUESTS = var.tracing_config.capture_http_requests
       POWERTOOLS_TRACER_CAPTURE_ERROR          = var.tracing_config.capture_error

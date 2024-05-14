@@ -18,10 +18,6 @@ The scale up lambda is triggered by events on a SQS queue. Events on this queue 
 
 The scale down lambda is triggered via a CloudWatch event. The event is triggered by a cron expression defined in the variable `scale_down_schedule_expression` (https://docs.aws.amazon.com/AmazonCloudWatch/latest/events/ScheduledEvents.html). For scaling down GitHub does not provide a good API yet, therefore we run the scaling down based on this event every x minutes. Each time the lambda is triggered it tries to remove all runners older than x minutes (configurable) managed in this deployment. In case the runner can be removed from GitHub, which means it is not executing a workflow, the lambda will terminate the EC2 instance.
 
-## Usages
-
-Usage examples are available in the root module. By default the root module will assume local zip files containing the lambda distribution are available. See the [download lambda module](../download-lambda/README.md) for more information.
-
 ## Lambda Function
 
 The Lambda function is written in [TypeScript](https://www.typescriptlang.org/) and requires Node 12.x and yarn. Sources are located in [./lambdas/runners]. Two lambda functions share the same sources, there is one entry point for `scaleDown` and another one for `scaleUp`.
@@ -55,13 +51,13 @@ yarn run dist
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 5.2 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 5.27 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 5.2 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 5.27 |
 
 ## Modules
 
@@ -171,8 +167,10 @@ yarn run dist
 | <a name="input_key_name"></a> [key\_name](#input\_key\_name) | Key pair name | `string` | `null` | no |
 | <a name="input_kms_key_arn"></a> [kms\_key\_arn](#input\_kms\_key\_arn) | Optional CMK Key ARN to be used for Parameter Store. | `string` | `null` | no |
 | <a name="input_lambda_architecture"></a> [lambda\_architecture](#input\_lambda\_architecture) | AWS Lambda architecture. Lambda functions using Graviton processors ('arm64') tend to have better price/performance than 'x86\_64' functions. | `string` | `"arm64"` | no |
-| <a name="input_lambda_runtime"></a> [lambda\_runtime](#input\_lambda\_runtime) | AWS Lambda runtime. | `string` | `"nodejs18.x"` | no |
+| <a name="input_lambda_runtime"></a> [lambda\_runtime](#input\_lambda\_runtime) | AWS Lambda runtime. | `string` | `"nodejs20.x"` | no |
 | <a name="input_lambda_s3_bucket"></a> [lambda\_s3\_bucket](#input\_lambda\_s3\_bucket) | S3 bucket from which to specify lambda functions. This is an alternative to providing local files directly. | `string` | `null` | no |
+| <a name="input_lambda_scale_down_memory_size"></a> [lambda\_scale\_down\_memory\_size](#input\_lambda\_scale\_down\_memory\_size) | Memory size limit in MB for scale down lambda. | `number` | `512` | no |
+| <a name="input_lambda_scale_up_memory_size"></a> [lambda\_scale\_up\_memory\_size](#input\_lambda\_scale\_up\_memory\_size) | Memory size limit in MB for scale-up lambda. | `number` | `512` | no |
 | <a name="input_lambda_security_group_ids"></a> [lambda\_security\_group\_ids](#input\_lambda\_security\_group\_ids) | List of security group IDs associated with the Lambda function. | `list(string)` | `[]` | no |
 | <a name="input_lambda_subnet_ids"></a> [lambda\_subnet\_ids](#input\_lambda\_subnet\_ids) | List of subnets in which the lambda will be launched, the subnets needs to be subnets in the `vpc_id`. | `list(string)` | `[]` | no |
 | <a name="input_lambda_timeout_scale_down"></a> [lambda\_timeout\_scale\_down](#input\_lambda\_timeout\_scale\_down) | Time out for the scale down lambda in seconds. | `number` | `60` | no |
@@ -185,6 +183,7 @@ yarn run dist
 | <a name="input_minimum_running_time_in_minutes"></a> [minimum\_running\_time\_in\_minutes](#input\_minimum\_running\_time\_in\_minutes) | The time an ec2 action runner should be running at minimum before terminated if non busy. If not set the default is calculated based on the OS. | `number` | `null` | no |
 | <a name="input_overrides"></a> [overrides](#input\_overrides) | This map provides the possibility to override some defaults. The following attributes are supported: `name_sg` overrides the `Name` tag for all security groups created by this module. `name_runner_agent_instance` overrides the `Name` tag for the ec2 instance defined in the auto launch configuration. `name_docker_machine_runners` overrides the `Name` tag spot instances created by the runner agent. | `map(string)` | <pre>{<br>  "name_runner": "",<br>  "name_sg": ""<br>}</pre> | no |
 | <a name="input_pool_config"></a> [pool\_config](#input\_pool\_config) | The configuration for updating the pool. The `pool_size` to adjust to by the events triggered by the `schedule_expression`. For example you can configure a cron expression for week days to adjust the pool to 10 and another expression for the weekend to adjust the pool to 1. | <pre>list(object({<br>    schedule_expression = string<br>    size                = number<br>  }))</pre> | `[]` | no |
+| <a name="input_pool_lambda_memory_size"></a> [pool\_lambda\_memory\_size](#input\_pool\_lambda\_memory\_size) | Lambda Memory size limit in MB for pool lambda | `number` | `512` | no |
 | <a name="input_pool_lambda_reserved_concurrent_executions"></a> [pool\_lambda\_reserved\_concurrent\_executions](#input\_pool\_lambda\_reserved\_concurrent\_executions) | Amount of reserved concurrent executions for the scale-up lambda function. A value of 0 disables lambda from being triggered and -1 removes any concurrency limitations. | `number` | `1` | no |
 | <a name="input_pool_lambda_timeout"></a> [pool\_lambda\_timeout](#input\_pool\_lambda\_timeout) | Time out for the pool lambda in seconds. | `number` | `60` | no |
 | <a name="input_pool_runner_owner"></a> [pool\_runner\_owner](#input\_pool\_runner\_owner) | The pool will deploy runners to the GitHub org ID, set this value to the org to which you want the runners deployed. Repo level is not supported. | `string` | `null` | no |
@@ -205,19 +204,20 @@ yarn run dist
 | <a name="input_runner_run_as"></a> [runner\_run\_as](#input\_runner\_run\_as) | Run the GitHub actions agent as user. | `string` | `"ec2-user"` | no |
 | <a name="input_runners_lambda_s3_key"></a> [runners\_lambda\_s3\_key](#input\_runners\_lambda\_s3\_key) | S3 key for runners lambda function. Required if using S3 bucket to specify lambdas. | `string` | `null` | no |
 | <a name="input_runners_lambda_s3_object_version"></a> [runners\_lambda\_s3\_object\_version](#input\_runners\_lambda\_s3\_object\_version) | S3 object version for runners lambda function. Useful if S3 versioning is enabled on source bucket. | `string` | `null` | no |
-| <a name="input_runners_maximum_count"></a> [runners\_maximum\_count](#input\_runners\_maximum\_count) | The maximum number of runners that will be created. | `number` | `3` | no |
+| <a name="input_runners_maximum_count"></a> [runners\_maximum\_count](#input\_runners\_maximum\_count) | The maximum number of runners that will be created. Setting the variable to `-1` desiables the maximum check. | `number` | `3` | no |
 | <a name="input_s3_runner_binaries"></a> [s3\_runner\_binaries](#input\_s3\_runner\_binaries) | Bucket details for cached GitHub binary. | <pre>object({<br>    arn = string<br>    id  = string<br>    key = string<br>  })</pre> | n/a | yes |
 | <a name="input_scale_down_schedule_expression"></a> [scale\_down\_schedule\_expression](#input\_scale\_down\_schedule\_expression) | Scheduler expression to check every x for scale down. | `string` | `"cron(*/5 * * * ? *)"` | no |
 | <a name="input_scale_up_reserved_concurrent_executions"></a> [scale\_up\_reserved\_concurrent\_executions](#input\_scale\_up\_reserved\_concurrent\_executions) | Amount of reserved concurrent executions for the scale-up lambda function. A value of 0 disables lambda from being triggered and -1 removes any concurrency limitations. | `number` | `1` | no |
 | <a name="input_sqs_build_queue"></a> [sqs\_build\_queue](#input\_sqs\_build\_queue) | SQS queue to consume accepted build events. | <pre>object({<br>    arn = string<br>  })</pre> | n/a | yes |
-| <a name="input_ssm_housekeeper"></a> [ssm\_housekeeper](#input\_ssm\_housekeeper) | Configuration for the SSM housekeeper lambda. This lambda deletes token / JIT config from SSM.<br><br>  `schedule_expression`: is used to configure the schedule for the lambda.<br>  `enabled`: enable or disable the lambda trigger via the EventBridge.<br>  `lambda_timeout`: timeout for the lambda in seconds.<br>  `config`: configuration for the lambda function. Token path will be read by default from the module. | <pre>object({<br>    schedule_expression = optional(string, "rate(1 day)")<br>    enabled             = optional(bool, true)<br>    lambda_timeout      = optional(number, 60)<br>    config = object({<br>      tokenPath      = optional(string)<br>      minimumDaysOld = optional(number, 1)<br>      dryRun         = optional(bool, false)<br>    })<br>  })</pre> | <pre>{<br>  "config": {}<br>}</pre> | no |
-| <a name="input_ssm_paths"></a> [ssm\_paths](#input\_ssm\_paths) | The root path used in SSM to store configuration and secreets. | <pre>object({<br>    root   = string<br>    tokens = string<br>    config = string<br>  })</pre> | n/a | yes |
+| <a name="input_ssm_housekeeper"></a> [ssm\_housekeeper](#input\_ssm\_housekeeper) | Configuration for the SSM housekeeper lambda. This lambda deletes token / JIT config from SSM.<br><br>  `schedule_expression`: is used to configure the schedule for the lambda.<br>  `state`: state of the cloudwatch event rule. Valid values are `DISABLED`, `ENABLED`, and `ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS`.<br>  `lambda_memory_size`: lambda memery size limit.<br>  `lambda_timeout`: timeout for the lambda in seconds.<br>  `config`: configuration for the lambda function. Token path will be read by default from the module. | <pre>object({<br>    schedule_expression = optional(string, "rate(1 day)")<br>    state               = optional(string, "ENABLED")<br>    lambda_memory_size  = optional(number, 512)<br>    lambda_timeout      = optional(number, 60)<br>    config = object({<br>      tokenPath      = optional(string)<br>      minimumDaysOld = optional(number, 1)<br>      dryRun         = optional(bool, false)<br>    })<br>  })</pre> | <pre>{<br>  "config": {}<br>}</pre> | no |
+| <a name="input_ssm_paths"></a> [ssm\_paths](#input\_ssm\_paths) | The root path used in SSM to store configuration and secrets. | <pre>object({<br>    root   = string<br>    tokens = string<br>    config = string<br>  })</pre> | n/a | yes |
 | <a name="input_subnet_ids"></a> [subnet\_ids](#input\_subnet\_ids) | List of subnets in which the action runners will be launched, the subnets needs to be subnets in the `vpc_id`. | `list(string)` | n/a | yes |
 | <a name="input_tags"></a> [tags](#input\_tags) | Map of tags that will be added to created resources. By default resources will be tagged with name. | `map(string)` | `{}` | no |
 | <a name="input_tracing_config"></a> [tracing\_config](#input\_tracing\_config) | Configuration for lambda tracing. | <pre>object({<br>    mode                  = optional(string, null)<br>    capture_http_requests = optional(bool, false)<br>    capture_error         = optional(bool, false)<br>  })</pre> | `{}` | no |
+| <a name="input_userdata_content"></a> [userdata\_content](#input\_userdata\_content) | Alternative user-data content, replacing the templated one. By providing your own user\_data you have to take care of installing all required software, including the action runner and registering the runner.  Be-aware configuration paramaters in SSM as well as tags are treated as internals. Changes will not trigger a breaking release. | `string` | `null` | no |
 | <a name="input_userdata_post_install"></a> [userdata\_post\_install](#input\_userdata\_post\_install) | User-data script snippet to insert after GitHub action runner install | `string` | `""` | no |
 | <a name="input_userdata_pre_install"></a> [userdata\_pre\_install](#input\_userdata\_pre\_install) | User-data script snippet to insert before GitHub action runner install | `string` | `""` | no |
-| <a name="input_userdata_template"></a> [userdata\_template](#input\_userdata\_template) | Alternative user-data template, replacing the default template. By providing your own user\_data you have to take care of installing all required software, including the action runner. Variables userdata\_pre/post\_install are ignored. | `string` | `null` | no |
+| <a name="input_userdata_template"></a> [userdata\_template](#input\_userdata\_template) | Alternative user-data template file path, replacing the default template. By providing your own user\_data you have to take care of installing all required software, including the action runner. Variables userdata\_pre/post\_install are ignored. | `string` | `null` | no |
 | <a name="input_vpc_id"></a> [vpc\_id](#input\_vpc\_id) | The VPC for the security groups. | `string` | n/a | yes |
 
 ## Outputs
