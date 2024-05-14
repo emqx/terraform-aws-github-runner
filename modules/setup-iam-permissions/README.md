@@ -6,7 +6,7 @@ This module will create an AWS IAM role that is required to use permission bound
 
 ## Usages
 
-See below or check out [this example](../../examples/permissions-boundary/README.md)
+See below or check out [this example](https://philips-labs.github.io/terraform-aws-github-runner/examples/permissions-boundary/)
 Create a workspace and add the following terraform code.
 
 ```hcl
@@ -42,13 +42,13 @@ Next execute the created Terraform code `terraform init && terraform apply` The 
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 5.2 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 5.27 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 5.2 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 5.27 |
 
 ## Modules
 

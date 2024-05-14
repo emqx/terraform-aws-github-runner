@@ -1,0 +1,102 @@
+name: Release
+on:
+  push:
+    tags:
+      - emqx*
+  workflow_dispatch:
+
+jobs:
+  lambdas:
+    name: Build lambdas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+      - name: Build lambdas dist
+        env:
+          OUTPUT_DIR: lambda_output
+        run: .ci/build.sh
+      - name: Upload artifacts
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: lambdas
+          path: lambda_output/*.zip
+          retention-days: 1
+
+  ami:
+    name: Build AMI
+    runs-on: ubuntu-latest
+    container:
+      image: index.docker.io/hashicorp/packer@sha256:297bbbbbbf3ce9e0431ac1e8f02934b20e1197613f877b55dfdb1ebfd94eb748 # ratchet:index.docker.io/hashicorp/packer:1.8.6
+    strategy:
+      matrix:
+        arch:
+          - amd64
+          - arm64
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+      - name: Build AMI
+        working-directory: images/emqx-${{ matrix.arch }}
+        env:
+          AWS_REGION: eu-west-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          packer init .
+          packer build github_agent.pkr.hcl
+
+  deploy:
+    name: Deploy
+    needs:
+      - ami
+      - lambdas
+    runs-on: ubuntu-latest
+    container:
+      image: hashicorp/terraform:1.5.3
+
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+      - name: Download artifact
+        uses: actions/download-artifact@65a9edc5881444af0b9093a5e628f2fe47ea3b2e # v4.1.7
+        with:
+          name: lambdas
+          path: lambda_output
+      - name: Deploy
+        working-directory: emqx
+        env:
+          AWS_REGION: eu-west-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_VAR_github_app_id: ${{ secrets.APP_ID }}
+          TF_VAR_github_app_key_base64: ${{ secrets.APP_KEY_BASE64 }}
+        run: |
+          terraform init
+          terraform refresh
+          terraform apply -auto-approve
+
+  ami-gc:
+    name: Deregister oldest AMI
+    runs-on: ubuntu-latest
+    needs:
+      - ami
+      - deploy
+    strategy:
+      matrix:
+        arch:
+          - amd64
+          - arm64
+    steps:
+      - name: Deregister oldest AMI
+        env:
+          AWS_REGION: eu-west-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          AMI_ID=$(aws ec2 describe-images \
+            --filters "Name=name,Values=github-runner-${{ matrix.arch }}-*" \
+            --query 'sort_by(Images, &CreationDate)[*].[ImageId]' \
+            --output text | head -n 1)
+          aws ec2 deregister-image --image-id $AMI_ID
+          aws ec2 describe-snapshots \
+            --filters "Name=description,Values=*$AMI_ID*" \
+            --query 'Snapshots[*].[SnapshotId]' \
+            --output text | xargs aws ec2 delete-snapshot --snapshot-id

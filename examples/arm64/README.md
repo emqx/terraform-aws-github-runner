@@ -1,4 +1,4 @@
-# Action runners deployment with ARM64 architecture
+# Amazon Linux ARM64
 
 This module shows how to create GitHub action runners using AWS Graviton instances which have ARM64 architecture. Lambda release will be downloaded from GitHub.
 
@@ -22,13 +22,11 @@ terraform init
 terraform apply
 ```
 
-You can receive the webhook details by running:
+The example will try to update the webhook of your GitHub. In case the update fails the apply will not fail. You can receive the webhook details by running:
 
 ```bash
 terraform output -raw webhook_secret
 ```
-
-Be aware some shells will print some end of line character `%`.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
@@ -36,7 +34,7 @@ Be aware some shells will print some end of line character `%`.
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 5.2 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 5.27 |
 | <a name="requirement_local"></a> [local](#requirement\_local) | ~> 2.0 |
 | <a name="requirement_random"></a> [random](#requirement\_random) | ~> 3.0 |
 
@@ -44,7 +42,7 @@ Be aware some shells will print some end of line character `%`.
 
 | Name | Version |
 |------|---------|
-| <a name="provider_random"></a> [random](#provider\_random) | 3.5.1 |
+| <a name="provider_random"></a> [random](#provider\_random) | 3.6.0 |
 
 ## Modules
 

@@ -85,7 +85,37 @@ cleanup() {
   fi
 }
 
+set_job_hook() {
+  local job_hook_script="$1"
+  local job_hook_var_name="$2"
+
+  if [[ -f "$job_hook_script" ]]; then
+    echo "$job_hook_script exists - $job_hook_script"
+    echo "$job_hook_var_name=$job_hook_script" | tee -a /opt/actions-runner/.env
+  else
+    echo "$job_hook_script does not exist - $job_hook_script"
+  fi
+}
+
+create_job_start_hook_script() {
+  cat <<EOF > /opt/actions-runner/job_pre_start_hook.sh
+#!/bin/bash
+echo "Running job pre start hook"
+env
+echo ------
+ls -la /opt/actions-runner/_work/_temp/_github_workflow
+cat /opt/actions-runner/_work/_temp/_github_workflow/event.json
+
+EOF
+  chmod +x /opt/actions-runner/job_pre_start_hook.sh
+}
+
 trap 'cleanup $? $LINENO $BASH_LINENO' EXIT
+
+create_job_start_hook_script
+JOB_PRE_HOOK_SCRIPT=/opt/actions-runner/job_pre_start_hook.sh
+set_job_hook $JOB_PRE_HOOK_SCRIPT ACTIONS_RUNNER_HOOK_JOB_STARTED
+
 
 echo "Retrieving TOKEN from AWS API"
 token=$(curl -sSL -X PUT --retry 40 --retry-connrefused --retry-delay 5 "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 180")
@@ -284,20 +314,6 @@ set -x
 journalctl -u docker.service --no-pager
 
 EOF
-
-# runner_s3_bucket=id-emqx-test
-# if [ -n "$runner_s3_bucket" ]; then
-#     if aws s3api head-object --bucket "$runner_s3_bucket" --key job_started_hook.sh; then
-#         echo "Found job_started_hook.sh in $runner_s3_bucket, adding extra commands to $JOB_STARTED_HOOK"
-#         aws s3 cp s3://$s3_bucket_name/job_started_hook.sh /tmp/job_started_hook.sh
-#         cat /tmp/job_started_hook.sh >> $JOB_STARTED_HOOK
-#     fi
-#     if aws s3api head-object --bucket "$runner_s3_bucket" --key job_completed_hook.sh; then
-#         echo "Found job_completed_hook.sh in $runner_s3_bucket, adding extra commands to $JOB_COMPLETED_HOOK"
-#         aws s3 cp s3://$s3_bucket_name/job_completed_hook.sh /tmp/job_completed_hook.sh
-#         cat /tmp/job_completed_hook.sh >> $JOB_COMPLETED_HOOK
-#     fi
-# fi
 
 chown $run_as $JOB_STARTED_HOOK $JOB_COMPLETED_HOOK
 chmod a+x $JOB_STARTED_HOOK $JOB_COMPLETED_HOOK
