@@ -44,7 +44,7 @@ variable "instance_type" {
 
 variable "root_volume_size_gb" {
   type    = number
-  default = 8
+  default = 12
 }
 
 variable "ebs_delete_on_termination" {
@@ -106,7 +106,7 @@ source "amazon-ebs" "githubrunner" {
 
   source_ami_filter {
     filters = {
-      name                = "*/ubuntu-jammy-22.04-arm64-server-*"
+      name                = "*ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-arm64-server-*"
       root-device-type    = "ebs"
       virtualization-type = "hvm"
     }
