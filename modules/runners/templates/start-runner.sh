@@ -270,12 +270,14 @@ JOB_COMPLETED_HOOK=/opt/actions-runner/job-completed-hook.sh
 
 cat > $JOB_STARTED_HOOK <<EOF
 #!/bin/bash
-set -x
-df -h
+
 redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:ts"
 redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:payload"
 redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:requeue_count"
 
+set -x
+df -h
+netstat -tuln
 EOF
 
 cat > $JOB_COMPLETED_HOOK <<EOF
@@ -284,20 +286,6 @@ set -x
 journalctl -u docker.service --no-pager
 
 EOF
-
-# runner_s3_bucket=id-emqx-test
-# if [ -n "$runner_s3_bucket" ]; then
-#     if aws s3api head-object --bucket "$runner_s3_bucket" --key job_started_hook.sh; then
-#         echo "Found job_started_hook.sh in $runner_s3_bucket, adding extra commands to $JOB_STARTED_HOOK"
-#         aws s3 cp s3://$s3_bucket_name/job_started_hook.sh /tmp/job_started_hook.sh
-#         cat /tmp/job_started_hook.sh >> $JOB_STARTED_HOOK
-#     fi
-#     if aws s3api head-object --bucket "$runner_s3_bucket" --key job_completed_hook.sh; then
-#         echo "Found job_completed_hook.sh in $runner_s3_bucket, adding extra commands to $JOB_COMPLETED_HOOK"
-#         aws s3 cp s3://$s3_bucket_name/job_completed_hook.sh /tmp/job_completed_hook.sh
-#         cat /tmp/job_completed_hook.sh >> $JOB_COMPLETED_HOOK
-#     fi
-# fi
 
 chown $run_as $JOB_STARTED_HOOK $JOB_COMPLETED_HOOK
 chmod a+x $JOB_STARTED_HOOK $JOB_COMPLETED_HOOK
