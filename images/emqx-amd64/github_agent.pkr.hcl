@@ -44,7 +44,7 @@ variable "instance_type" {
 
 variable "root_volume_size_gb" {
   type    = number
-  default = 12
+  default = 20
 }
 
 variable "ebs_delete_on_termination" {
