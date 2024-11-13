@@ -276,15 +276,17 @@ redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:payload"
 redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:requeue_count"
 
 set -x
-df -h
+docker info
 netstat -tuln
+
+sudo mkdir -p /home/ubuntu/.kube
+sudo chown -R ubuntu:ubuntu /home/ubuntu/.kube
 EOF
 
 cat > $JOB_COMPLETED_HOOK <<EOF
 #!/bin/bash
 set -x
-journalctl -u docker.service --no-pager
-
+sudo journalctl -u docker.service --no-pager
 EOF
 
 chown $run_as $JOB_STARTED_HOOK $JOB_COMPLETED_HOOK
