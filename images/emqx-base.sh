@@ -64,6 +64,8 @@ curl -fsSLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/st
 curl -fsSLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/$DPKG_ARCH/kubectl.sha256"
 echo "$(<kubectl.sha256) kubectl" | sha256sum --check
 install kubectl /usr/local/bin/kubectl
+mkdir -p /home/ubuntu/.kube
+chown -R ubuntu:ubuntu /home/ubuntu/.kube
 
 curl -fsSL https://baltocdn.com/helm/signing.asc | gpg --dearmor -o /usr/share/keyrings/helm.gpg
 echo "deb [arch=$DPKG_ARCH signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" > /etc/apt/sources.list.d/helm-stable-debian.list
