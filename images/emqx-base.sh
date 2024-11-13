@@ -105,7 +105,7 @@ systemctl restart snapd
 snap set system refresh.hold="$(date --date='today+60 days' +%Y-%m-%dT%H:%M:%S%:z)"
 
 apt -y update
-redis-cli -h
+redis-cli --version
 
 # Stop and disable apt-daily upgrade services;
 systemctl stop apt-daily.timer
