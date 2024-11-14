@@ -58,14 +58,14 @@ echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://pack
 apt-get -y update && apt-get -y install redis
 
 # k8s tools
+# delete symlink to /var/lib/kubelet/kubeconfig (owned by root) installed by AWS
+rm -f /home/ubuntu/.kube/config
 curl -fsSLO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-$DPKG_ARCH
 install minikube-linux-$DPKG_ARCH /usr/local/bin/minikube
 curl -fsSLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/$DPKG_ARCH/kubectl"
 curl -fsSLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/$DPKG_ARCH/kubectl.sha256"
 echo "$(<kubectl.sha256) kubectl" | sha256sum --check
 install kubectl /usr/local/bin/kubectl
-mkdir -p /home/ubuntu/.kube
-chown -R ubuntu:ubuntu /home/ubuntu/.kube
 
 curl -fsSL https://baltocdn.com/helm/signing.asc | gpg --dearmor -o /usr/share/keyrings/helm.gpg
 echo "deb [arch=$DPKG_ARCH signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" > /etc/apt/sources.list.d/helm-stable-debian.list

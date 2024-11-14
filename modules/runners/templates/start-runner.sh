@@ -278,9 +278,6 @@ redis-cli -h "$runner_redis_url" DEL "workflow:\$GITHUB_RUN_ID:requeue_count"
 set -x
 docker info
 netstat -tuln
-
-sudo mkdir -p /home/ubuntu/.kube
-sudo chown -R ubuntu:ubuntu /home/ubuntu/.kube
 EOF
 
 cat > $JOB_COMPLETED_HOOK <<EOF
