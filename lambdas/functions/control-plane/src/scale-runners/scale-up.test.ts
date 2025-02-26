@@ -12,6 +12,7 @@ import { RunnerInputParameters } from './../aws/runners.d';
 import ScaleError from './ScaleError';
 import * as scaleUpModule from './scale-up';
 import { getParameter } from '@aws-github-runner/aws-ssm-util';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 const mockOctokit = {
   paginate: jest.fn(),
@@ -43,6 +44,15 @@ jest.mock('./../github/auth');
 jest.mock('@aws-github-runner/aws-ssm-util', () => ({
   ...jest.requireActual('@aws-github-runner/aws-ssm-util'),
   getParameter: jest.fn(),
+}));
+
+jest.mock('@aws-sdk/lib-dynamodb', () => ({
+  ...jest.requireActual('@aws-sdk/lib-dynamodb'),
+  DynamoDBDocumentClient: {
+    from: jest.fn().mockImplementation(() => ({
+      send: jest.fn(),
+    })),
+  },
 }));
 
 export type RunnerType = 'ephemeral' | 'non-ephemeral';
@@ -80,6 +90,7 @@ const EXPECTED_RUNNER_PARAMS: RunnerInputParameters = {
   subnets: ['subnet-123'],
   tracingEnabled: false,
   onDemandFailoverOnError: [],
+  dynamoDBTableName: '',
 };
 let expectedRunnerParams: RunnerInputParameters;
 
