@@ -2,6 +2,9 @@ matcherConfig:
   exactMatch: true
   labelMatchers:
     - [self-hosted, linux, x64, ephemeral]
+    - [self-hosted, linux, x64]
+    - [aws-ubuntu22.04-amd64]
+    - [aws-amd64]
 fifo: true
 redrive_build_queue:
   enabled: true
@@ -36,13 +39,15 @@ runner_config:
   enable_job_queued_check: true
   minimum_running_time_in_minutes: 2
   enable_runner_binaries_syncer: false
+  disable_runner_autoupdate: true
   create_service_linked_role_spot: true
+  instance_allocation_strategy: price-capacity-optimized
   scale_up_reserved_concurrent_executions: 12
   lambda_architecture: arm64
   job_retry:
-    enabled: true
+    enable: true
     max_attempts: 3
-    delay_in_seconds: 180
+    delay_in_seconds: 120
   block_device_mappings:
     - device_name: /dev/xvda
       delete_on_termination: true
