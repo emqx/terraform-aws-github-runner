@@ -73,6 +73,7 @@ module "runners" {
 
   instance_termination_watcher = {
     enable = true
+    zip    = "../../lambda_output/termination-watcher.zip"
   }
 
   runners_ssm_housekeeper = {
