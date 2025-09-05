@@ -67,8 +67,8 @@ curl -fsSLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/st
 echo "$(<kubectl.sha256) kubectl" | sha256sum --check
 install kubectl /usr/local/bin/kubectl
 
-curl -fsSL https://baltocdn.com/helm/signing.asc | gpg --dearmor -o /usr/share/keyrings/helm.gpg
-echo "deb [arch=$DPKG_ARCH signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" > /etc/apt/sources.list.d/helm-stable-debian.list
+curl -fsSL https://packages.buildkite.com/helm-linux/helm-debian/gpgkey | gpg --dearmor -o /usr/share/keyrings/helm.gpg
+echo "deb [signed-by=/usr/share/keyrings/helm.gpg] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main" > /etc/apt/sources.list.d/helm-stable-debian.list
 apt-get -y update && apt-get -y install helm
 
 # java
