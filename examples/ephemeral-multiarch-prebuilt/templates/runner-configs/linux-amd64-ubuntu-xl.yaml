@@ -49,7 +49,7 @@ runner_config:
     - device_name: /dev/xvda
       delete_on_termination: true
       volume_type: gp3
-      volume_size: 60
+      volume_size: 160
       encrypted: true
       iops: null
       throughput: null
