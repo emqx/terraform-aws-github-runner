@@ -234,15 +234,20 @@ if [ -b /dev/nvme1n1 ]; then
     mkdir -p /data/docker /data/containerd
     chown -R root:docker /data/docker /data/containerd
 
-    mkdir -p /data/_work
-    chown -R $run_as:$run_as /data/_work
-    rm -rf /opt/actions-runner/_work
-    ln -s /data/_work /opt/actions-runner/
-
-    mkdir -p /data/_diag
-    chown -R $run_as:$run_as /data/_diag
-    rm -rf /opt/actions-runner/_diag
-    ln -s /data/_diag /opt/actions-runner/
+    for d in _work _diag cached; do
+      if [ -L /opt/actions-runner/$d ]; then
+        echo "/opt/actions-runner/$d is already a symlink, skipping"
+      elif [ -d /opt/actions-runner/$d ]; then
+        echo "Moving /opt/actions-runner/$d to /data/$d and creating symlink"
+        mv /opt/actions-runner/$d /data/
+        ln -s /data/$d /opt/actions-runner/
+      else
+        echo "/opt/actions-runner/$d does not exist, creating directory in /data and symlink"
+        mkdir -p /data/$d
+        ln -s /data/$d /opt/actions-runner/
+      fi
+      chown -R $run_as:$run_as /data/$d
+    done
 
     usermod -a -G docker ubuntu
 
