@@ -315,6 +315,9 @@ if [[ "$agent_mode" == "ephemeral" ]]; then
     echo "Starting without JIT config"
     sudo --preserve-env=RUNNER_ALLOW_RUNASROOT -u "$run_as" -- ./run.sh
   fi
+  df -h
+  du -hs /data
+  du -hs /opt/actions-runner/*
   echo "Runner has finished"
 else
   echo "Installing the runner as a service"
