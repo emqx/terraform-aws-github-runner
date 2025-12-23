@@ -94,7 +94,7 @@ wget -q https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_
 apt install /tmp/session-manager-plugin.deb
 
 # github cli
-wget -q https://github.com/cli/cli/releases/download/v2.33.0/gh_2.33.0_linux_$DPKG_ARCH.deb -O /tmp/gh.deb
+wget -q https://github.com/cli/cli/releases/download/v2.83.2/gh_2.83.2_linux_$DPKG_ARCH.deb -O /tmp/gh.deb
 apt install /tmp/gh.deb
 
 # yq
