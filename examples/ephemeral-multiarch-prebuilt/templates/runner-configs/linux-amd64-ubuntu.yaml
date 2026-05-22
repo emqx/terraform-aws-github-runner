@@ -37,7 +37,12 @@ runner_config:
   enable_organization_runners: true
   enable_ephemeral_runners: true
   enable_job_queued_check: true
-  minimum_running_time_in_minutes: 2
+  # Must comfortably exceed the longest expected job duration. The scale-down
+  # Lambda runs every minute and terminates any runner past this threshold that
+  # GitHub's API reports as `busy: false`. For a 15+ min job, a single stale
+  # `busy: false` read (API race / cache / transient) was killing active
+  # runners mid-build and surfacing as "lost communication" on the job.
+  minimum_running_time_in_minutes: 30
   enable_runner_binaries_syncer: false
   disable_runner_autoupdate: true
   create_service_linked_role_spot: true
