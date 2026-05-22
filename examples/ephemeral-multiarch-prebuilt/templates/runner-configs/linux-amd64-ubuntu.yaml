@@ -41,7 +41,10 @@ runner_config:
   enable_runner_binaries_syncer: false
   disable_runner_autoupdate: true
   create_service_linked_role_spot: true
-  instance_allocation_strategy: price-capacity-optimized
+  # capacity-optimized favors the deepest spot pools over price to reduce
+  # interruptions; x86 .large capacity in us-east-2 is volatile (~15-20%
+  # interruption rate on busy days). See arm64/xl pools still on price-capacity-optimized.
+  instance_allocation_strategy: capacity-optimized
   scale_up_reserved_concurrent_executions: 12
   lambda_architecture: arm64
   job_retry:
