@@ -13,6 +13,10 @@
 *id_rsa*
 *.pem
 
+# EMQX deployment secrets (GitHub App private key), generated in CI from
+# secrets and supplied locally via -var-file; must never be committed
+emqx.tfvars
+
 # other
 node_modules/
 .idea

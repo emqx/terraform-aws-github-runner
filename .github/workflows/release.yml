@@ -3,30 +3,43 @@ on:
   push:
     branches:
       - main
-      - v1
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      actions: write
-      id-token: write
-      attestations: write
+      contents: write # for release-please-action to create releases and update changelogs
+      actions: write # for release-please-action to trigger other workflows
+      id-token: write # for actions/attest-build-provenance to generate attestations
+      attestations: write # for actions/attest-build-provenance to write attestations
+    environment: release
     steps:
-      - uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
         with:
-          node-version: 22
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+          egress-policy: audit
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - name: Build dist
         working-directory: lambdas
         run: yarn install --frozen-lockfile && yarn run test && yarn dist
       - name: Get installation token
-        uses: actions/create-github-app-token@0d564482f06ca65fa9e77e2510873638c82206f2 # v1.11.5
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: token
         with:
           app-id: ${{ vars.RELEASER_APP_ID }}
@@ -37,7 +50,7 @@ jobs:
         run: echo "name=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
       - name: Release
         id: release
-        uses: googleapis/release-please-action@7987652d64b4581673a76e33ad5e98e3dd56832f # v4.1.3
+        uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4.4.0
         with:
           target-branch: ${{ steps.branch.outputs.name }}
           release-type: terraform-module
@@ -45,7 +58,7 @@ jobs:
       - name: Attest
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         id: attest
-        uses: actions/attest-build-provenance@520d128f165991a6c774bcb264f323e3d70747f4 # v2.2.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: '${{ github.workspace }}/lambdas/functions/**/*.zip'
       - name: Update release notes with attestation
@@ -55,14 +68,16 @@ jobs:
           VERSION: ${{ github.event.inputs.version }}
           TAG_NAME: ${{ steps.release.outputs.tag_name }}
           ATTESTATION_URL: ${{ steps.attest.outputs.attestation-url }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           version="${VERSION}"
           tag_name="${TAG_NAME}"
           attestation_url="${ATTESTATION_URL}"
+          repository="${REPOSITORY}"
           gh release view $version --json body -q '.body' > new-release-notes.md
           echo "## Attestation" >> new-release-notes.md
           echo "Attestation url: $attestation_url" >> new-release-notes.md
-          echo "Verify the artifacts by running \`gh attest verify <name_of_artifact> --repo ${{ github.repository }}\`" >> new-release-notes.md
+          echo "Verify the artifacts by running \`gh attestation verify <name_of_artifact> --repo ${repository}\`" >> new-release-notes.md
           gh release edit $tag_name -F new-release-notes.md -t $tag_name
       - name: Upload release assets
         if: ${{ steps.release.outputs.releases_created == 'true' }}
@@ -74,3 +89,23 @@ jobs:
           for f in $(find . -name '*.zip'); do
             gh release upload $tag_name $f
           done
+      - name: Attach attestation
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.release.outputs.tag_name }}
+          ATTESTATION_ID: ${{ steps.attest.outputs.attestation-id }}
+        run: |
+          # rename attest bundle to github-aws-runners-terraform-aws-github-runner-attestation-$attestation-id.sigstore
+          # OpenSSF expects the attestation bundle to be named in this format (*.sigstore)
+          SIGSTORE_BUNDLE=$RUNNER_TEMP/github-aws-runners-terraform-aws-github-runner-attestation-${ATTESTATION_ID}.sigstore
+          INTOTO_BUNDLE=$RUNNER_TEMP/github-aws-runners-terraform-aws-github-runner-attestation-${ATTESTATION_ID}.intoto.jsonl
+          mv ${ATTESTATION_BUNDLE} $SIGSTORE_BUNDLE
+          if [ -z "$SIGSTORE_BUNDLE" ]; then
+            echo "No attestation bundle found, skipping attachment."
+            exit 0
+          fi
+          gh release upload $TAG_NAME "$SIGSTORE_BUNDLE"
+          cat ${SIGSTORE_BUNDLE} | jq -r '.dsseEnvelope | select(.payloadType == "application/vnd.in-toto+json").payload' | base64 -d | jq .> ${INTOTO_BUNDLE}
+          gh release upload $TAG_NAME "${INTOTO_BUNDLE}"

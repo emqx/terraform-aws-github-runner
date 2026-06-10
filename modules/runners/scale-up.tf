@@ -25,7 +25,7 @@ resource "aws_lambda_function" "scale_up" {
   architectures                  = [var.lambda_architecture]
   environment {
     variables = {
-      AMI_ID_SSM_PARAMETER_NAME                = var.ami_id_ssm_parameter_name
+      AMI_ID_SSM_PARAMETER_NAME                = local.ami_id_ssm_parameter_name
       DISABLE_RUNNER_AUTOUPDATE                = var.disable_runner_autoupdate
       ENABLE_EPHEMERAL_RUNNERS                 = var.enable_ephemeral_runners
       ENABLE_JIT_CONFIG                        = var.enable_jit_config
@@ -54,11 +54,13 @@ resource "aws_lambda_function" "scale_up" {
       RUNNER_GROUP_NAME                        = var.runner_group_name
       RUNNER_NAME_PREFIX                       = var.runner_name_prefix
       RUNNERS_MAXIMUM_COUNT                    = var.runners_maximum_count
-      POWERTOOLS_SERVICE_NAME                  = "runners-scale-up"
+      POWERTOOLS_SERVICE_NAME                  = "${var.prefix}-scale-up"
       SSM_TOKEN_PATH                           = local.token_path
       SSM_CONFIG_PATH                          = "${var.ssm_paths.root}/${var.ssm_paths.config}"
+      SSM_PARAMETER_STORE_TAGS                 = local.parameter_store_tags
       SUBNET_IDS                               = join(",", var.subnet_ids)
       ENABLE_ON_DEMAND_FAILOVER_FOR_ERRORS     = jsonencode(var.enable_on_demand_failover_for_errors)
+      SCALE_ERRORS                             = jsonencode(var.scale_errors)
       JOB_RETRY_CONFIG                         = jsonencode(local.job_retry_config)
       DYNAMODB_TABLE_NAME                      = var.dynamodb_table_name != null ? var.dynamodb_table_name : ""
       DYNAMODB_TTL_IN_SECONDS                  = var.dynamodb_ttl_in_seconds
@@ -85,13 +87,17 @@ resource "aws_cloudwatch_log_group" "scale_up" {
   name              = "/aws/lambda/${aws_lambda_function.scale_up.function_name}"
   retention_in_days = var.logging_retention_in_days
   kms_key_id        = var.logging_kms_key_id
+  log_group_class   = var.log_class
   tags              = var.tags
 }
 
 resource "aws_lambda_event_source_mapping" "scale_up" {
-  event_source_arn = var.sqs_build_queue.arn
-  function_name    = aws_lambda_function.scale_up.arn
-  batch_size       = 1
+  event_source_arn                   = var.sqs_build_queue.arn
+  function_name                      = aws_lambda_function.scale_up.arn
+  function_response_types            = ["ReportBatchItemFailures"]
+  batch_size                         = var.lambda_event_source_mapping_batch_size
+  maximum_batching_window_in_seconds = var.lambda_event_source_mapping_maximum_batching_window_in_seconds
+  tags                               = var.tags
 }
 
 resource "aws_lambda_permission" "scale_runners_lambda" {
@@ -103,7 +109,7 @@ resource "aws_lambda_permission" "scale_runners_lambda" {
 }
 
 resource "aws_iam_role" "scale_up" {
-  name                 = "${var.prefix}-action-scale-up-lambda-role"
+  name                 = "${substr("${var.prefix}-scale-up-lambda", 0, 54)}-${substr(md5("${var.prefix}-scale-up-lambda"), 0, 8)}"
   assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role_policy.json
   path                 = local.role_path
   permissions_boundary = var.role_permissions_boundary
@@ -121,6 +127,7 @@ resource "aws_iam_role_policy" "scale_up" {
     ssm_config_path           = "arn:${var.aws_partition}:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_paths.root}/${var.ssm_paths.config}"
     kms_key_arn               = local.kms_key_arn
     ami_kms_key_arn           = local.ami_kms_key_arn
+    ssm_ami_id_parameter_arn  = local.ami_id_ssm_module_managed ? aws_ssm_parameter.runner_ami_id[0].arn : var.ami.id_ssm_parameter_arn
   })
 }
 
@@ -146,7 +153,7 @@ resource "aws_iam_role_policy_attachment" "scale_up_vpc_execution_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "ami_id_ssm_parameter_read" {
-  count      = var.ami_id_ssm_parameter_name != null ? 1 : 0
+  count      = local.ami_id_ssm_parameter_name != null ? 1 : 0
   role       = aws_iam_role.scale_up.name
   policy_arn = aws_iam_policy.ami_id_ssm_parameter_read[0].arn
 }

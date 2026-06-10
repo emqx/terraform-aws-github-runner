@@ -1,6 +1,6 @@
 locals {
-  environment = "prebuilt"
-  aws_region  = "eu-west-1"
+  environment = var.environment != null ? var.environment : "default"
+  aws_region  = var.aws_region
 }
 
 resource "random_id" "random" {
@@ -32,9 +32,12 @@ module "runners" {
     webhook_secret = random_id.random.hex
   }
 
-  webhook_lambda_zip                = "../lambdas-download/webhook.zip"
-  runner_binaries_syncer_lambda_zip = "../lambdas-download/runner-binaries-syncer.zip"
-  runners_lambda_zip                = "../lambdas-download/runners.zip"
+  # link to downloaded lambda zip files.
+  # When not explicitly set lambda zip files are grabbed from the module requiring lambda build.
+  #
+  # webhook_lambda_zip                = "../lambdas-download/webhook.zip"
+  # runner_binaries_syncer_lambda_zip = "../lambdas-download/runner-binaries-syncer.zip"
+  # runners_lambda_zip                = "../lambdas-download/runners.zip"
 
   runner_extra_labels = ["default", "example"]
 
@@ -42,12 +45,10 @@ module "runners" {
 
   # configure your pre-built AMI
   enable_userdata = false
-  ami_filter      = { name = [var.ami_name_filter], state = ["available"] }
-  ami_owners      = [data.aws_caller_identity.current.account_id]
-
-  # Look up runner AMI ID from an AWS SSM parameter (overrides ami_filter at instance launch time)
-  # NOTE: the parameter must be managed outside of this module (e.g. in a runner AMI build workflow)
-  # ami_id_ssm_parameter_name = "my-runner-ami-id"
+  ami = {
+    filter = { name = [var.ami_name_filter], state = ["available"] }
+    owners = [data.aws_caller_identity.current.account_id]
+  }
 
   # disable binary syncer since github agent is already installed in the AMI.
   enable_runner_binaries_syncer = false
@@ -60,6 +61,44 @@ module "runners" {
 
   # override scaling down
   scale_down_schedule_expression = "cron(* * * * ? *)"
+
+  enable_ami_housekeeper = true
+  ami_housekeeper_cleanup_config = {
+    ssmParameterNames = ["*/ami_id"]
+    minimumDaysOld    = 1
+    dryRun            = true
+    amiFilters = [
+      {
+        Name   = "name"
+        Values = ["*al2023*"]
+      }
+    ]
+  }
+
+  # variable "runners_ssm_housekeeper" {
+  #   description = <<EOF
+  #   Configuration for the SSM housekeeper lambda. This lambda deletes token / JIT config from SSM.
+
+  #   `schedule_expression`: is used to configure the schedule for the lambda.
+  #   `enabled`: enable or disable the lambda trigger via the EventBridge.
+  #   `lambda_memory_size`: lambda memory size limit.
+  #   `lambda_timeout`: timeout for the lambda in seconds.
+  #   `config`: configuration for the lambda function. Token path will be read by default from the module.
+  #   EOF
+  #   type = object({
+  #     schedule_expression = optional(string, "rate(1 day)")
+  #     enabled             = optional(bool, true)
+  #     lambda_memory_size  = optional(number, 512)
+  #     lambda_timeout      = optional(number, 60)
+  #     config = object({
+  #       tokenPath      = optional(string)
+  #       minimumDaysOld = optional(number, 1)
+  #       dryRun         = optional(bool, false)
+  #     })
+  #   })
+  #   default = { config = {} }
+
+  # log_level = "debug"
 }
 
 module "webhook_github_app" {

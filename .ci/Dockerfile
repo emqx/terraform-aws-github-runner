@@ -1,5 +1,5 @@
 #syntax=docker/dockerfile:1.2
-FROM node:20 as build
+FROM node@sha256:1501d5fd51032aa10701a7dcc9e6c72ab1e611a033ffcf08b6d5882e9165f63e as build
 WORKDIR /lambdas
 RUN apt-get update \
         && apt-get install -y zip \

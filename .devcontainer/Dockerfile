@@ -1,2 +1,1 @@
-ARG VARIANT="20-bullseye"
-FROM mcr.microsoft.com/vscode/devcontainers/typescript-node:0-${VARIANT}
+FROM mcr.microsoft.com/vscode/devcontainers/typescript-node@sha256:d09eac5cd85fb4bd70770fa3f88ee9dfdd0b09f8b85455a0e039048677276749

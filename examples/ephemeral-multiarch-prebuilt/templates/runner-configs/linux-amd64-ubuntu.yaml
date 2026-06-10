@@ -1,5 +1,6 @@
 matcherConfig:
   exactMatch: true
+  priority: 100
   labelMatchers:
     - [self-hosted, linux, x64, ephemeral]
     - [self-hosted, linux, x64]
@@ -27,13 +28,14 @@ runner_config:
   scale_down_schedule_expression: cron(* * * * ? *)
   userdata_template: ./templates/user-data.sh
   enable_userdata: true
-  ami_owners:
-    - "self"
-  ami_filter:
-    name:
-      - github-runner-ubuntu-jammy-amd64-*
-    state:
-      - available
+  ami:
+    owners:
+      - "self"
+    filter:
+      name:
+        - github-runner-ubuntu-jammy-amd64-*
+      state:
+        - available
   enable_organization_runners: true
   enable_ephemeral_runners: true
   enable_job_queued_check: true
@@ -42,8 +44,9 @@ runner_config:
   disable_runner_autoupdate: true
   create_service_linked_role_spot: true
   # capacity-optimized favors the deepest spot pools over price to reduce
-  # interruptions; x86 .large capacity in us-east-2 is volatile (~15-20%
-  # interruption rate on busy days). See arm64/xl pools still on price-capacity-optimized.
+  # interruptions; x86 .large spot capacity tends to be volatile (~15-20%
+  # interruption rate on busy days in us-east-2, where this was tuned).
+  # The arm64/xl pools are still on price-capacity-optimized.
   instance_allocation_strategy: capacity-optimized
   scale_up_reserved_concurrent_executions: 12
   lambda_architecture: arm64

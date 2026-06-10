@@ -2,44 +2,46 @@ import { Octokit } from '@octokit/rest';
 import { cleanupOrgRunners } from './cleanup-org-runners';
 import * as auth from '../github/auth';
 import * as scaleUp from './scale-up';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 
 // Mock the modules
-jest.mock('../github/auth');
-jest.mock('./scale-up');
+vi.mock('../github/auth');
+vi.mock('./scale-up');
 
 describe('cleanup-org-runners', () => {
   // Setup environment variables
   const OLD_ENV = process.env;
 
   // Mock functions
-  const mockCreateGithubAppAuth = auth.createGithubAppAuth as jest.Mock;
-  const mockCreateGithubInstallationAuth = auth.createGithubInstallationAuth as jest.Mock;
-  const mockCreateOctokitClient = auth.createOctokitClient as jest.Mock;
-  const mockGetGitHubEnterpriseApiUrl = scaleUp.getGitHubEnterpriseApiUrl as jest.Mock;
+  const mockCreateGithubAppAuth = auth.createGithubAppAuth as Mock;
+  const mockCreateGithubInstallationAuth = auth.createGithubInstallationAuth as Mock;
+  const mockCreateOctokitClient = auth.createOctokitClient as Mock;
+  const mockGetGitHubEnterpriseApiUrl = scaleUp.getGitHubEnterpriseApiUrl as Mock;
 
   // Mock Octokit client
   const mockOctokit = {
     actions: {
-      listSelfHostedRunnersForOrg: jest.fn(),
-      deleteSelfHostedRunnerFromOrg: jest.fn().mockImplementation(() => Promise.resolve({ status: 204 })),
+      listSelfHostedRunnersForOrg: vi.fn(),
+      deleteSelfHostedRunnerFromOrg: vi.fn().mockImplementation(() => Promise.resolve({ status: 204 })),
     },
     apps: {
-      getOrgInstallation: jest.fn().mockImplementation(() => Promise.resolve({ data: { id: 12345 } })),
+      getOrgInstallation: vi.fn().mockImplementation(() => Promise.resolve({ data: { id: 12345 } })),
     },
-    paginate: jest.fn().mockImplementation(async () => []),
+    paginate: vi.fn().mockImplementation(async () => []),
   } as unknown as Octokit & {
-    paginate: jest.Mock;
+    paginate: Mock;
     actions: {
-      deleteSelfHostedRunnerFromOrg: jest.Mock;
+      deleteSelfHostedRunnerFromOrg: Mock;
     };
     apps: {
-      getOrgInstallation: jest.Mock;
+      getOrgInstallation: Mock;
     };
   };
 
   beforeEach(() => {
     // Reset mocks
-    jest.resetAllMocks();
+    vi.resetAllMocks();
 
     // Setup environment
     process.env = { ...OLD_ENV };

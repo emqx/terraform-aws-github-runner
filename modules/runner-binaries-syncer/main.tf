@@ -5,7 +5,7 @@ locals {
 resource "aws_s3_bucket" "action_dist" {
   bucket        = var.distribution_bucket_name
   force_destroy = true
-  tags          = var.tags
+  tags          = merge(var.tags, var.s3_tags)
 }
 
 resource "aws_s3_bucket_ownership_controls" "this" {
@@ -21,6 +21,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "bucket_config" {
   rule {
     id     = "lifecycle_config"
     status = "Enabled"
+
+    filter {
+      prefix = ""
+    }
 
     abort_incomplete_multipart_upload {
       days_after_initiation = 7

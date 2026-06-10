@@ -3,17 +3,17 @@ import { addPersistentContextToChildLogger, createChildLogger } from '@aws-githu
 import { getParameter, putParameter } from '@aws-github-runner/aws-ssm-util';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
-
 import yn from 'yn';
 
 import { createGithubAppAuth, createGithubInstallationAuth, createOctokitClient } from '../github/auth';
-import { createRunner, listEC2Runners } from './../aws/runners';
+import { createRunner, listEC2Runners, tag, terminateRunner } from './../aws/runners';
 import { RunnerInputParameters } from './../aws/runners.d';
-import ScaleError from './ScaleError';
-import { publishRetryMessage } from './job-retry';
 import { metricGitHubAppRateLimit } from '../github/rate-limit';
+import { publishRetryMessage } from './job-retry';
 
 const logger = createChildLogger('scale-up');
+
+export type LambdaRunnerSource = 'scale-up-lambda' | 'pool-lambda';
 
 export interface RunnerGroup {
   name: string;
@@ -36,6 +36,10 @@ export interface ActionRequestMessage {
   retryCounter?: number;
 }
 
+export interface ActionRequestMessageSQS extends ActionRequestMessage {
+  messageId: string;
+}
+
 export interface ActionRequestMessageRetry extends ActionRequestMessage {
   retryCounter: number;
 }
@@ -52,6 +56,7 @@ interface CreateGitHubRunnerConfig {
   disableAutoUpdate: boolean;
   ssmTokenPath: string;
   ssmConfigPath: string;
+  ssmParameterStoreTags: { Key: string; Value: string }[];
   dynamoDBConfig?: {
     tableName: string;
     ttlInSeconds?: number;
@@ -69,6 +74,7 @@ interface CreateEC2RunnerConfig {
   amiIdSsmParameterName?: string;
   tracingEnabled?: boolean;
   onDemandFailoverOnError?: string[];
+  scaleErrors: string[];
 }
 
 function generateRunnerServiceConfig(githubRunnerConfig: CreateGitHubRunnerConfig, token: string) {
@@ -96,6 +102,37 @@ function generateRunnerServiceConfig(githubRunnerConfig: CreateGitHubRunnerConfi
   return config;
 }
 
+export function validateSsmParameterStoreTags(tagsJson: string): { Key: string; Value: string }[] {
+  try {
+    const tags = JSON.parse(tagsJson);
+
+    if (!Array.isArray(tags)) {
+      throw new Error('Tags must be an array');
+    }
+
+    if (tags.length === 0) {
+      return [];
+    }
+
+    tags.forEach((tag, index) => {
+      if (typeof tag !== 'object' || tag === null) {
+        throw new Error(`Tag at index ${index} must be an object`);
+      }
+      if (!tag.Key || typeof tag.Key !== 'string' || tag.Key.trim() === '') {
+        throw new Error(`Tag at index ${index} has missing or invalid 'Key' property`);
+      }
+      if (!Object.prototype.hasOwnProperty.call(tag, 'Value') || typeof tag.Value !== 'string') {
+        throw new Error(`Tag at index ${index} has missing or invalid 'Value' property`);
+      }
+    });
+
+    return tags;
+  } catch (err) {
+    logger.error('Invalid SSM_PARAMETER_STORE_TAGS format', { error: err });
+    throw new Error(`Failed to parse SSM_PARAMETER_STORE_TAGS: ${(err as Error).message}`);
+  }
+}
+
 async function getGithubRunnerRegistrationToken(githubRunnerConfig: CreateGitHubRunnerConfig, ghClient: Octokit) {
   const registrationToken =
     githubRunnerConfig.runnerType === 'Org'
@@ -105,8 +142,6 @@ async function getGithubRunnerRegistrationToken(githubRunnerConfig: CreateGitHub
           repo: githubRunnerConfig.runnerOwner.split('/')[1],
         });
 
-  const appId = parseInt(await getParameter(process.env.PARAMETER_GITHUB_APP_ID_NAME));
-  logger.info('App id from SSM', { appId: appId });
   return registrationToken.data.token;
 }
 
@@ -123,7 +158,7 @@ function removeTokenFromLogging(config: string[]): string[] {
 }
 
 export async function getInstallationId(
-  ghesApiUrl: string,
+  githubAppClient: Octokit,
   enableOrgLevel: boolean,
   payload: ActionRequestMessage,
 ): Promise<number> {
@@ -131,16 +166,14 @@ export async function getInstallationId(
     return payload.installationId;
   }
 
-  const ghAuth = await createGithubAppAuth(undefined, ghesApiUrl);
-  const githubClient = await createOctokitClient(ghAuth.token, ghesApiUrl);
   return enableOrgLevel
     ? (
-        await githubClient.apps.getOrgInstallation({
+        await githubAppClient.apps.getOrgInstallation({
           org: payload.repositoryOwner,
         })
       ).data.id
     : (
-        await githubClient.apps.getRepoInstallation({
+        await githubAppClient.apps.getRepoInstallation({
           owner: payload.repositoryOwner,
           repo: payload.repositoryName,
         })
@@ -191,6 +224,9 @@ async function getRunnerGroupId(githubRunnerConfig: CreateGitHubRunnerConfig, gh
           `${githubRunnerConfig.ssmConfigPath}/runner-group/${githubRunnerConfig.runnerGroup}`,
           runnerGroupId.toString(),
           false,
+          {
+            tags: githubRunnerConfig.ssmParameterStoreTags,
+          },
         );
       } catch (err) {
         logger.debug('Error storing runner group id in SSM Parameter Store', err as Error);
@@ -220,24 +256,52 @@ async function getRunnerGroupByName(ghClient: Octokit, githubRunnerConfig: Creat
 export async function createRunners(
   githubRunnerConfig: CreateGitHubRunnerConfig,
   ec2RunnerConfig: CreateEC2RunnerConfig,
+  numberOfRunners: number,
   ghClient: Octokit,
-): Promise<void> {
+  source: LambdaRunnerSource = 'scale-up-lambda',
+): Promise<string[]> {
   const instances = await createRunner({
     runnerType: githubRunnerConfig.runnerType,
     runnerOwner: githubRunnerConfig.runnerOwner,
     dynamoDBTableName: githubRunnerConfig.dynamoDBConfig?.tableName,
-    numberOfRunners: 1,
+    numberOfRunners,
+    source,
     ...ec2RunnerConfig,
   });
   if (instances.length !== 0) {
-    await createStartRunnerConfig(githubRunnerConfig, instances, ghClient);
+    const failedInstances = await createStartRunnerConfig(githubRunnerConfig, instances, ghClient);
+
+    // Terminate instances that failed to get configured to avoid waste
+    if (failedInstances.length > 0) {
+      logger.warn('Terminating instances that failed to get configured', {
+        failedInstances,
+        failedCount: failedInstances.length,
+      });
+
+      for (const instanceId of failedInstances) {
+        try {
+          await terminateRunner(instanceId);
+        } catch (error) {
+          logger.error('Failed to terminate instance', {
+            instanceId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      // Remove failed instances from the returned list
+      return instances.filter((id) => !failedInstances.includes(id));
+    }
   }
+
+  return instances;
 }
 
-export async function scaleUp(eventSource: string, payload: ActionRequestMessage): Promise<void> {
-  logger.info(`Received ${payload.eventType} from ${payload.repositoryOwner}/${payload.repositoryName}`);
+export async function scaleUp(payloads: ActionRequestMessageSQS[]): Promise<string[]> {
+  logger.info('Received scale up requests', {
+    n_requests: payloads.length,
+  });
 
-  if (eventSource !== 'aws:sqs') throw Error('Cannot handle non-SQS events!');
   const enableOrgLevel = yn(process.env.ENABLE_ORGANIZATION_RUNNERS, { default: true });
   const maximumRunners = parseInt(process.env.RUNNERS_MAXIMUM_COUNT || '3');
   const runnerLabels = process.env.RUNNER_LABELS || '';
@@ -261,109 +325,233 @@ export async function scaleUp(eventSource: string, payload: ActionRequestMessage
   const onDemandFailoverOnError = process.env.ENABLE_ON_DEMAND_FAILOVER_FOR_ERRORS
     ? (JSON.parse(process.env.ENABLE_ON_DEMAND_FAILOVER_FOR_ERRORS) as [string])
     : [];
+  const ssmParameterStoreTags: { Key: string; Value: string }[] =
+    process.env.SSM_PARAMETER_STORE_TAGS && process.env.SSM_PARAMETER_STORE_TAGS.trim() !== ''
+      ? validateSsmParameterStoreTags(process.env.SSM_PARAMETER_STORE_TAGS)
+      : [];
+  const scaleErrors = JSON.parse(process.env.SCALE_ERRORS) as [string];
   const dynamoDBTableName = process.env.DYNAMODB_TABLE_NAME || '';
   const dynamoDBTTLInSeconds = process.env.DYNAMODB_TTL_IN_SECONDS
     ? parseInt(process.env.DYNAMODB_TTL_IN_SECONDS)
     : 24 * 60 * 60;
 
-  if (ephemeralEnabled && payload.eventType !== 'workflow_job') {
-    logger.warn(`${payload.eventType} event is not supported in combination with ephemeral runners.`);
-    throw Error(
-      `The event type ${payload.eventType} is not supported in combination with ephemeral runners.` +
-        `Please ensure you have enabled workflow_job events.`,
-    );
+  const { ghesApiUrl, ghesBaseUrl } = getGitHubEnterpriseApiUrl();
+
+  const ghAuth = await createGithubAppAuth(undefined, ghesApiUrl);
+  const githubAppClient = await createOctokitClient(ghAuth.token, ghesApiUrl);
+
+  // A map of either owner or owner/repo name to Octokit client, so we use a
+  // single client per installation (set of messages), depending on how the app
+  // is installed. This is for a couple of reasons:
+  // - Sharing clients opens up the possibility of caching API calls.
+  // - Fetching a client for an installation actually requires a couple of API
+  //   calls itself, which would get expensive if done for every message in a
+  //   batch.
+  type MessagesWithClient = {
+    messages: ActionRequestMessageSQS[];
+    githubInstallationClient: Octokit;
+  };
+
+  const validMessages = new Map<string, MessagesWithClient>();
+  const rejectedMessageIds = new Set<string>();
+  for (const payload of payloads) {
+    const { eventType, messageId, repositoryName, repositoryOwner } = payload;
+    if (ephemeralEnabled && eventType !== 'workflow_job') {
+      logger.warn(
+        'Event is not supported in combination with ephemeral runners. Please ensure you have enabled workflow_job events.',
+        { eventType, messageId },
+      );
+
+      rejectedMessageIds.add(messageId);
+
+      continue;
+    }
+
+    if (!isValidRepoOwnerTypeIfOrgLevelEnabled(payload, enableOrgLevel)) {
+      logger.warn(
+        `Repository does not belong to a GitHub organization and organization runners are enabled. This is not supported. Not scaling up for this event. Not throwing error to prevent re-queueing and just ignoring the event.`,
+        {
+          repository: `${repositoryOwner}/${repositoryName}`,
+          messageId,
+        },
+      );
+
+      continue;
+    }
+
+    const key = enableOrgLevel ? payload.repositoryOwner : `${payload.repositoryOwner}/${payload.repositoryName}`;
+
+    let entry = validMessages.get(key);
+
+    // If we've not seen this owner/repo before, we'll need to create a GitHub
+    // client for it.
+    if (entry === undefined) {
+      const installationId = await getInstallationId(githubAppClient, enableOrgLevel, payload);
+      const ghAuth = await createGithubInstallationAuth(installationId, ghesApiUrl);
+      const githubInstallationClient = await createOctokitClient(ghAuth.token, ghesApiUrl);
+
+      entry = {
+        messages: [],
+        githubInstallationClient,
+      };
+
+      validMessages.set(key, entry);
+    }
+
+    entry.messages.push(payload);
   }
 
-  if (!isValidRepoOwnerTypeIfOrgLevelEnabled(payload, enableOrgLevel)) {
-    logger.warn(
-      `Repository ${payload.repositoryOwner}/${payload.repositoryName} does not belong to a GitHub` +
-        `organization and organization runners are enabled. This is not supported. Not scaling up for this event.` +
-        `Not throwing error to prevent re-queueing and just ignoring the event.`,
-    );
-    return;
-  }
-
-  const ephemeral = ephemeralEnabled && payload.eventType === 'workflow_job';
   const runnerType = enableOrgLevel ? 'Org' : 'Repo';
-  const runnerOwner = enableOrgLevel ? payload.repositoryOwner : `${payload.repositoryOwner}/${payload.repositoryName}`;
 
   addPersistentContextToChildLogger({
     runner: {
+      ephemeral: ephemeralEnabled,
       type: runnerType,
-      owner: runnerOwner,
       namePrefix: runnerNamePrefix,
-    },
-    github: {
-      event: payload.eventType,
-      workflow_job_id: payload.id.toString(),
+      n_events: Array.from(validMessages.values()).reduce((acc, group) => acc + group.messages.length, 0),
     },
   });
 
-  logger.info(`Received event`);
+  logger.info(`Received events`);
 
-  const { ghesApiUrl, ghesBaseUrl } = getGitHubEnterpriseApiUrl();
+  for (const [group, { githubInstallationClient, messages }] of validMessages.entries()) {
+    // Work out how much we want to scale up by.
+    let scaleUp = 0;
+    const queuedMessages: ActionRequestMessageSQS[] = [];
 
-  const installationId = await getInstallationId(ghesApiUrl, enableOrgLevel, payload);
-  const ghAuth = await createGithubInstallationAuth(installationId, ghesApiUrl);
-  const githubInstallationClient = await createOctokitClient(ghAuth.token, ghesApiUrl);
-
-  if (!enableJobQueuedCheck || (await isJobQueued(githubInstallationClient, payload))) {
-    let scaleUp = true;
-    if (maximumRunners !== -1) {
-      const currentRunners = await listEC2Runners({
-        environment,
-        runnerType,
-        runnerOwner,
+    for (const message of messages) {
+      const messageLogger = logger.createChild({
+        persistentKeys: {
+          eventType: message.eventType,
+          group,
+          messageId: message.messageId,
+          repository: `${message.repositoryOwner}/${message.repositoryName}`,
+        },
       });
-      logger.info(`Current runners: ${currentRunners.length} of ${maximumRunners}`);
-      scaleUp = currentRunners.length < maximumRunners;
+
+      if (enableJobQueuedCheck && !(await isJobQueued(githubInstallationClient, message))) {
+        messageLogger.info('No runner will be created, job is not queued.');
+
+        continue;
+      }
+
+      scaleUp++;
+      queuedMessages.push(message);
     }
 
-    if (scaleUp) {
-      logger.info(`Attempting to launch a new runner`);
+    if (scaleUp === 0) {
+      logger.info('No runners will be created for this group, no valid messages found.');
 
-      await createRunners(
-        {
-          ephemeral,
-          enableJitConfig,
-          ghesBaseUrl,
-          runnerLabels,
-          runnerGroup,
-          runnerNamePrefix,
-          runnerOwner,
-          runnerType,
-          disableAutoUpdate,
-          ssmTokenPath,
-          ssmConfigPath,
-          dynamoDBConfig: { tableName: dynamoDBTableName, ttlInSeconds: dynamoDBTTLInSeconds },
-        },
-        {
-          ec2instanceCriteria: {
-            instanceTypes,
-            targetCapacityType: instanceTargetCapacityType,
-            maxSpotPrice: instanceMaxSpotPrice,
-            instanceAllocationStrategy: instanceAllocationStrategy,
-          },
-          environment,
-          launchTemplateName,
-          subnets,
-          amiIdSsmParameterName,
-          tracingEnabled,
-          onDemandFailoverOnError,
-        },
-        githubInstallationClient,
-      );
+      continue;
+    }
 
-      await publishRetryMessage(payload);
-    } else {
-      logger.info('No runner will be created, maximum number of runners reached.');
-      if (ephemeral) {
-        throw new ScaleError('No runners create: maximum of runners reached.');
+    // Don't call the EC2 API if we can create an unlimited number of runners.
+    const currentRunners =
+      maximumRunners === -1 ? 0 : (await listEC2Runners({ environment, runnerType, runnerOwner: group })).length;
+
+    logger.info('Current runners', {
+      currentRunners,
+      maximumRunners,
+    });
+
+    // Calculate how many runners we want to create.
+    const newRunners =
+      maximumRunners === -1
+        ? // If we don't have an upper limit, scale up by the number of new jobs.
+          scaleUp
+        : // Otherwise, we do have a limit, so work out if `scaleUp` would exceed it.
+          Math.min(scaleUp, maximumRunners - currentRunners);
+
+    const missingInstanceCount = Math.max(0, scaleUp - newRunners);
+
+    if (missingInstanceCount > 0) {
+      logger.info('Not all runners will be created for this group, maximum number of runners reached.', {
+        desiredNewRunners: scaleUp,
+      });
+
+      if (ephemeralEnabled) {
+        // This removes `missingInstanceCount` items from the start of the array
+        // so that, if we retry more messages later, we pick fresh ones.
+        const removedMessages = messages.splice(0, missingInstanceCount);
+        removedMessages.forEach(({ messageId }) => rejectedMessageIds.add(messageId));
+      }
+
+      // No runners will be created, so skip calling the EC2 API.
+      if (newRunners <= 0) {
+        // Publish retry messages for messages that are not rejected
+        for (const message of queuedMessages) {
+          if (!rejectedMessageIds.has(message.messageId)) {
+            await publishRetryMessage(message as ActionRequestMessageRetry);
+          }
+        }
+        continue;
       }
     }
-  } else {
-    logger.info('No runner will be created, job is not queued.');
+
+    logger.info(`Attempting to launch new runners`, {
+      newRunners,
+    });
+
+    const instances = await createRunners(
+      {
+        ephemeral: ephemeralEnabled,
+        enableJitConfig,
+        ghesBaseUrl,
+        runnerLabels,
+        runnerGroup,
+        runnerNamePrefix,
+        runnerOwner: group,
+        runnerType,
+        disableAutoUpdate,
+        ssmTokenPath,
+        ssmConfigPath,
+        ssmParameterStoreTags,
+        dynamoDBConfig: { tableName: dynamoDBTableName, ttlInSeconds: dynamoDBTTLInSeconds },
+      },
+      {
+        ec2instanceCriteria: {
+          instanceTypes,
+          targetCapacityType: instanceTargetCapacityType,
+          maxSpotPrice: instanceMaxSpotPrice,
+          instanceAllocationStrategy: instanceAllocationStrategy,
+        },
+        environment,
+        launchTemplateName,
+        subnets,
+        amiIdSsmParameterName,
+        tracingEnabled,
+        onDemandFailoverOnError,
+        scaleErrors,
+      },
+      newRunners,
+      githubInstallationClient,
+      'scale-up-lambda',
+    );
+
+    // Not all runners we wanted were created, let's reject enough items so that
+    // number of entries will be retried.
+    if (instances.length !== newRunners) {
+      const failedInstanceCount = newRunners - instances.length;
+
+      logger.warn('Some runners failed to be created, rejecting some messages so the requests are retried', {
+        wanted: newRunners,
+        got: instances.length,
+        failedInstanceCount,
+      });
+
+      const failedMessages = messages.slice(0, failedInstanceCount);
+      failedMessages.forEach(({ messageId }) => rejectedMessageIds.add(messageId));
+    }
+
+    // Publish retry messages for messages that are not rejected
+    for (const message of queuedMessages) {
+      if (!rejectedMessageIds.has(message.messageId)) {
+        await publishRetryMessage(message as ActionRequestMessageRetry);
+      }
+    }
   }
+
+  return Array.from(rejectedMessageIds);
 }
 
 export function getGitHubEnterpriseApiUrl() {
@@ -384,15 +572,21 @@ export function getGitHubEnterpriseApiUrl() {
   return { ghesApiUrl, ghesBaseUrl };
 }
 
+/**
+ * Creates the start configuration for runner instances by either generating JIT configs
+ * or registration tokens.
+ *
+ * @returns Array of instance IDs that failed to get configured
+ */
 async function createStartRunnerConfig(
   githubRunnerConfig: CreateGitHubRunnerConfig,
   instances: string[],
   ghClient: Octokit,
-) {
+): Promise<string[]> {
   if (githubRunnerConfig.enableJitConfig && githubRunnerConfig.ephemeral) {
-    await createJitConfig(githubRunnerConfig, instances, ghClient);
+    return await createJitConfig(githubRunnerConfig, instances, ghClient);
   } else {
-    await createRegistrationTokenConfig(githubRunnerConfig, instances, ghClient);
+    return await createRegistrationTokenConfig(githubRunnerConfig, instances, ghClient);
   }
 }
 
@@ -407,11 +601,16 @@ function addDelay(instances: string[]) {
   return { isDelay, delay };
 }
 
+/**
+ * Creates registration token configuration for non-ephemeral runners.
+ *
+ * @returns Empty array (this configuration method does not have failure cases)
+ */
 async function createRegistrationTokenConfig(
   githubRunnerConfig: CreateGitHubRunnerConfig,
   instances: string[],
   ghClient: Octokit,
-) {
+): Promise<string[]> {
   const { isDelay, delay } = addDelay(instances);
   const token = await getGithubRunnerRegistrationToken(githubRunnerConfig, ghClient);
   const runnerServiceConfig = generateRunnerServiceConfig(githubRunnerConfig, token);
@@ -422,62 +621,13 @@ async function createRegistrationTokenConfig(
 
   for (const instance of instances) {
     await storeRunnerConfig(instance, 'service', runnerServiceConfig.join(' '), githubRunnerConfig);
-
-    if (isDelay && githubRunnerConfig.dynamoDBConfig?.tableName === '') {
-      // Delay to prevent AWS ssm rate limits by being within the max throughput limit
-      await delay(25);
-    }
-  }
-}
-
-async function createJitConfig(
-  githubRunnerConfig: CreateGitHubRunnerConfig,
-  instances: string[],
-  ghClient: Octokit,
-): Promise<void> {
-  const runnerGroupId = await getRunnerGroupId(githubRunnerConfig, ghClient);
-  const { isDelay, delay } = addDelay(instances);
-  const runnerLabels = githubRunnerConfig.runnerLabels.split(',');
-
-  logger.debug(`Runner group id: ${runnerGroupId}`);
-  logger.debug(`Runner labels: ${runnerLabels}`);
-  for (const instance of instances) {
-    // generate jit config for runner registration
-    const ephemeralRunnerConfig: EphemeralRunnerConfig = {
-      runnerName: `${githubRunnerConfig.runnerNamePrefix}${instance}`,
-      runnerGroupId: runnerGroupId,
-      runnerLabels: runnerLabels,
-    };
-    logger.debug(`Runner name: ${ephemeralRunnerConfig.runnerName}`);
-    const runnerConfig =
-      githubRunnerConfig.runnerType === 'Org'
-        ? await ghClient.actions.generateRunnerJitconfigForOrg({
-            org: githubRunnerConfig.runnerOwner,
-            name: ephemeralRunnerConfig.runnerName,
-            runner_group_id: ephemeralRunnerConfig.runnerGroupId,
-            labels: ephemeralRunnerConfig.runnerLabels,
-          })
-        : await ghClient.actions.generateRunnerJitconfigForRepo({
-            owner: githubRunnerConfig.runnerOwner.split('/')[0],
-            repo: githubRunnerConfig.runnerOwner.split('/')[1],
-            name: ephemeralRunnerConfig.runnerName,
-            runner_group_id: ephemeralRunnerConfig.runnerGroupId,
-            labels: ephemeralRunnerConfig.runnerLabels,
-          });
-
-    metricGitHubAppRateLimit(runnerConfig.headers);
-
-    logger.debug('Runner JIT config for ephemeral runner generated.', {
-      instance: instance,
-    });
-
-    await storeRunnerConfig(instance, 'jit', runnerConfig.data.encoded_jit_config, githubRunnerConfig);
-
-    if (isDelay && githubRunnerConfig.dynamoDBConfig?.tableName === '') {
+    if (isDelay && !githubRunnerConfig.dynamoDBConfig?.tableName) {
       // Only apply delay for SSM operations to prevent rate limits
       await delay(25);
     }
   }
+
+  return [];
 }
 
 async function storeRunnerConfig(
@@ -486,8 +636,7 @@ async function storeRunnerConfig(
   configValue: string,
   githubRunnerConfig: CreateGitHubRunnerConfig,
 ): Promise<void> {
-  if (githubRunnerConfig.dynamoDBConfig?.tableName !== '') {
-    // Use DynamoDB if configured
+  if (githubRunnerConfig.dynamoDBConfig?.tableName) {
     const client = new DynamoDBClient({});
     const docClient = DynamoDBDocumentClient.from(client);
 
@@ -510,7 +659,7 @@ async function storeRunnerConfig(
     });
   } else {
     await putParameter(`${githubRunnerConfig.ssmTokenPath}/${instance}`, configValue, true, {
-      tags: [{ Key: 'InstanceId', Value: instance }],
+      tags: [{ Key: 'InstanceId', Value: instance }, ...githubRunnerConfig.ssmParameterStoreTags],
     });
 
     logger.debug(`Stored ${configType} config in SSM`, {
@@ -518,4 +667,88 @@ async function storeRunnerConfig(
       path: `${githubRunnerConfig.ssmTokenPath}/${instance}`,
     });
   }
+}
+
+async function tagRunnerId(instanceId: string, runnerId: string): Promise<void> {
+  try {
+    await tag(instanceId, [{ Key: 'ghr:github_runner_id', Value: runnerId }]);
+  } catch (e) {
+    logger.error(`Failed to mark runner '${instanceId}' with ${runnerId}.`, { error: e });
+  }
+}
+
+/**
+ * Creates JIT (Just-In-Time) configuration for ephemeral runners.
+ * Continues processing remaining instances even if some fail.
+ *
+ * @returns Array of instance IDs that failed to get JIT configuration
+ */
+async function createJitConfig(
+  githubRunnerConfig: CreateGitHubRunnerConfig,
+  instances: string[],
+  ghClient: Octokit,
+): Promise<string[]> {
+  const runnerGroupId = await getRunnerGroupId(githubRunnerConfig, ghClient);
+  const { isDelay, delay } = addDelay(instances);
+  const runnerLabels = githubRunnerConfig.runnerLabels.split(',');
+  const failedInstances: string[] = [];
+
+  logger.debug(`Runner group id: ${runnerGroupId}`);
+  logger.debug(`Runner labels: ${runnerLabels}`);
+  for (const instance of instances) {
+    try {
+      // generate jit config for runner registration
+      const ephemeralRunnerConfig: EphemeralRunnerConfig = {
+        runnerName: `${githubRunnerConfig.runnerNamePrefix}${instance}`,
+        runnerGroupId: runnerGroupId,
+        runnerLabels: runnerLabels,
+      };
+      logger.debug(`Runner name: ${ephemeralRunnerConfig.runnerName}`);
+      const runnerConfig =
+        githubRunnerConfig.runnerType === 'Org'
+          ? await ghClient.actions.generateRunnerJitconfigForOrg({
+              org: githubRunnerConfig.runnerOwner,
+              name: ephemeralRunnerConfig.runnerName,
+              runner_group_id: ephemeralRunnerConfig.runnerGroupId,
+              labels: ephemeralRunnerConfig.runnerLabels,
+            })
+          : await ghClient.actions.generateRunnerJitconfigForRepo({
+              owner: githubRunnerConfig.runnerOwner.split('/')[0],
+              repo: githubRunnerConfig.runnerOwner.split('/')[1],
+              name: ephemeralRunnerConfig.runnerName,
+              runner_group_id: ephemeralRunnerConfig.runnerGroupId,
+              labels: ephemeralRunnerConfig.runnerLabels,
+            });
+
+      metricGitHubAppRateLimit(runnerConfig.headers);
+
+      // tag the EC2 instance with the Github runner id
+      await tagRunnerId(instance, runnerConfig.data.runner.id.toString());
+
+      logger.debug('Runner JIT config for ephemeral runner generated.', {
+        instance: instance,
+      });
+      await storeRunnerConfig(instance, 'jit', runnerConfig.data.encoded_jit_config, githubRunnerConfig);
+      if (isDelay && !githubRunnerConfig.dynamoDBConfig?.tableName) {
+        // Only apply delay for SSM operations to prevent rate limits
+        await delay(25);
+      }
+    } catch (error) {
+      failedInstances.push(instance);
+      logger.warn('Failed to create JIT config for instance, continuing with remaining instances', {
+        instance: instance,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (failedInstances.length > 0) {
+    logger.error('Failed to create JIT config for some instances', {
+      failedInstances: failedInstances,
+      totalInstances: instances.length,
+      successfulInstances: instances.length - failedInstances.length,
+    });
+  }
+
+  return failedInstances;
 }

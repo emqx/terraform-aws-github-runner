@@ -1,13 +1,13 @@
 # GitHub Self-Hosted on AWS on Spot Instances
 
-This [Terraform](https://www.terraform.io/) module creates the required infrastructure needed to host [GitHub Actions](https://github.com/features/actions) self-hosted, auto-scaling runners on [AWS spot instances](https://aws.amazon.com/ec2/spot/). It provides the required logic to handle the life cycle for scaling up and down using a set of AWS Lambda functions. Runners are scaled down to zero to avoid costs when no workflows are active.
+This [Terraform](https://www.terraform.io/) module creates the required infrastructure needed to host [GitHub Actions](https://github.com/features/actions) self-hosted, auto-scaling runners on [AWS spot instances](https://aws.amazon.com/ec2/spot/). It provides the required logic to handle the lifecycle for scaling up and down using a set of AWS Lambda functions. Runners are scaled down to zero to avoid costs when no workflows are active.
 
 ![Architecture](assets/runners.light.png#only-light)
 ![Architecture](assets/runners.dark.png#only-dark)
 
 ## Motivation
 
-GitHub Actions `self-hosted` runners provide a flexible option to run CI workloads on the infrastructure of your choice. However, currently GitHub does not provide tooling to automate the creation and scaling of action runners. This module creates the AWS infrastructure to host action runners on spot instances. It also provides lambda modules to orchestrate the life cycle of the action runners.
+GitHub Actions `self-hosted` runners provide a flexible option to run CI workloads on the infrastructure of your choice. However, currently GitHub does not provide tooling to automate the creation and scaling of action runners. This module creates the AWS infrastructure to host action runners on spot instances. It also provides lambda modules to orchestrate the lifecycle of the action runners.
 
 Lambda was selected as the preferred runtime for two primary reasons. Firstly, it enables the development of compact components with limited access to AWS and GitHub. Secondly, it offers a scalable configuration with minimal expenses, applicable at both the repository and organizational levels. The Lambda functions will be responsible for provisioning Linux-based EC2 instances equipped with Docker to handle CI workloads compatible with Linux and/or Docker. The primary objective is to facilitate Docker-based workloads.
 
@@ -15,9 +15,9 @@ A pertinent question may arise: why not opt for Kubernetes? The current strategy
 
 ## Overview
 
-The module is designed to be used in a GitHub organization. It can also be used in a GitHub repository, but this does not supports all features. The module is receiving GitHub webhook events for the `workflow_job` event. The module will create a new runner if the event is for a workflow that requires a runner, and no runner is available. Alternatively the module can be configured as ephemeral runners. In this case the module will create a new runner for each workflow job event.
+The module is designed to be used in a GitHub organization. It can also be used in a GitHub repository, but this does not support all features. The module is receiving GitHub webhook events for the `workflow_job` event. The module will create a new runner if the event is for a workflow that requires a runner, and no runner is available. Alternatively the module can be configured as ephemeral runners. In this case the module will create a new runner for each workflow job event.
 
-For ephemeral runners a pool is can be configured. The pool maintains a minimum number of runners based on a schedule. The pool works only for org level runners.
+For ephemeral runners a pool can be configured. The pool maintains a minimum number of runners based on a schedule. The pool works only for org level runners.
 
 For non ephemeral runners with the idle config the module will avoid scaling down back to zero. Instead it will maintain a minimum number of runners based on a schedule. This avoids the need to scale up when a new workflow is triggered.
 
@@ -79,7 +79,7 @@ The Instance Termination Watcher is creating log and optional metrics for termin
 
     This feature is Beta, changes will not trigger a major release as long in beta.
 
-The Job Retry will allow you to retry scaling when a job is not started. When enabled the scale up lambda will send a retry message to the a SQS queue. The Job Retry lambda will check after a delay if the job is still queued, and if so, it will send a retry command to the scale up lambda via SQS. The feature is designed to be used with ephemeral runners. The feature is opt in, it will not be created by default.
+The Job Retry will allow you to retry scaling when a job is not started. When enabled the scale up lambda will send a retry message to the SQS queue. The Job Retry lambda will check after a delay if the job is still queued, and if so, it will send a retry command to the scale up lambda via SQS. The feature is designed to be used with ephemeral runners. The feature is opt in, it will not be created by default.
 
 Consequences of enabling the feature are:
 
