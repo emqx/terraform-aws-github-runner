@@ -27,6 +27,7 @@ jobs:
     container:
       image: index.docker.io/hashicorp/packer@sha256:297bbbbbbf3ce9e0431ac1e8f02934b20e1197613f877b55dfdb1ebfd94eb748 # ratchet:index.docker.io/hashicorp/packer:1.8.6
     strategy:
+      fail-fast: false
       matrix:
         arch:
           - amd64
@@ -42,6 +43,9 @@ jobs:
           AWS_REGION: eu-west-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # authenticated plugin downloads: packer init queries the GitHub API,
+          # and the shared runner IP exhausts the anonymous rate limit
+          PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           packer init .
           packer build .
