@@ -36,7 +36,7 @@ jobs:
       - name: Build AMI
         working-directory: images/ubuntu-jammy-${{ matrix.arch }}
         env:
-          AWS_REGION: us-east-2
+          AWS_REGION: eu-west-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
@@ -67,7 +67,8 @@ jobs:
             id         = ${{ secrets.APP_ID }}
             key_base64 = "${{ secrets.APP_KEY_BASE64 }}"
           }
-          aws_region = "us-east-2"
+          aws_region  = "eu-west-1"
+          environment = "ci-eu"
           cleanup_org_runners = {
             state = "ENABLED"
             config = {
@@ -78,7 +79,7 @@ jobs:
       - name: Deploy
         working-directory: examples/ephemeral-multiarch-prebuilt
         env:
-          AWS_REGION: us-east-2
+          AWS_REGION: eu-west-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
@@ -101,14 +102,20 @@ jobs:
     steps:
       - name: Deregister oldest AMI
         env:
-          AWS_REGION: us-east-2
+          AWS_REGION: eu-west-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
-          AMI_ID=$(aws ec2 describe-images \
+          AMI_IDS=$(aws ec2 describe-images \
             --filters "Name=name,Values=github-runner-ubuntu-jammy-${{ matrix.arch }}-*" \
             --query 'sort_by(Images, &CreationDate)[*].[ImageId]' \
-            --output text | head -n 1)
+            --output text)
+          # keep at least one AMI: the only image is the one currently in use
+          if [ "$(echo "$AMI_IDS" | grep -c .)" -le 1 ]; then
+            echo "One or zero AMIs present, nothing to deregister"
+            exit 0
+          fi
+          AMI_ID=$(echo "$AMI_IDS" | head -n 1)
           aws ec2 deregister-image --image-id $AMI_ID
           aws ec2 describe-snapshots \
             --filters "Name=description,Values=*$AMI_ID*" \
