@@ -1,12 +1,9 @@
 matcherConfig:
   exactMatch: true
-  priority: 100
+  priority: 900
   labelMatchers:
-    - [self-hosted, linux, arm64, ephemeral]
-    - [self-hosted, linux, arm64]
-    - [aws-ubuntu22.04-arm64]
-    - [aws-arm64]
-fifo: true
+    - [self-hosted, linux, arm64, ubuntu-24.04]
+    - [aws-ubuntu24.04-arm64]
 redrive_build_queue:
   enabled: true
   maxReceiveCount: 3
@@ -14,14 +11,15 @@ runner_config:
   runner_os: linux
   runner_architecture: arm64
   runner_run_as: ubuntu
-  runner_name_prefix: ubuntu-2204-arm64_
+  runner_name_prefix: ubuntu-2404-arm64_
   enable_ssm_on_runners: true
   credit_specification: standard
   instance_types:
     - m8g.large
     - m7g.large
     - m6g.large
-  runners_maximum_count: 256
+  # opt-in pool while workloads validate on 24.04; resize when traffic grows
+  runners_maximum_count: 64
   delay_webhook_event: 0
   scale_down_schedule_expression: cron(* * * * ? *)
   userdata_template: ./templates/user-data.sh
@@ -31,7 +29,7 @@ runner_config:
       - "self"
     filter:
       name:
-        - github-runner-ubuntu-jammy-arm64-*
+        - github-runner-ubuntu-noble-arm64-*
       state:
         - available
   enable_organization_runners: true
@@ -43,7 +41,6 @@ runner_config:
   create_service_linked_role_spot: true
   instance_allocation_strategy: price-capacity-optimized
   scale_up_reserved_concurrent_executions: 12
-  lambda_architecture: arm64
   job_retry:
     enable: true
     max_attempts: 3

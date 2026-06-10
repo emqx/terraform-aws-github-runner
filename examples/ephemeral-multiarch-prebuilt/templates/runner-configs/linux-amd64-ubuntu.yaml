@@ -1,5 +1,6 @@
 matcherConfig:
   exactMatch: true
+  priority: 100
   labelMatchers:
     - [self-hosted, linux, x64, ephemeral]
     - [self-hosted, linux, x64]
