@@ -56,11 +56,12 @@ resource "aws_cloudwatch_log_group" "main" {
   name              = "/aws/lambda/${aws_lambda_function.main.function_name}"
   retention_in_days = var.lambda.logging_retention_in_days
   kms_key_id        = var.lambda.logging_kms_key_id
+  log_group_class   = var.lambda.log_class
   tags              = var.lambda.tags
 }
 
 resource "aws_iam_role" "main" {
-  name                 = "${var.lambda.prefix}-${var.lambda.name}"
+  name                 = "${substr("${var.lambda.prefix}-${var.lambda.name}", 0, 54)}-${substr(md5("${var.lambda.prefix}-${var.lambda.name}"), 0, 8)}"
   assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role_policy.json
   path                 = local.role_path
   permissions_boundary = var.lambda.role_permissions_boundary

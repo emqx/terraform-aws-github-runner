@@ -1,7 +1,7 @@
 data "aws_caller_identity" "current" {}
 
 resource "aws_iam_role" "runner" {
-  name                 = "${var.prefix}-runner-role"
+  name                 = "${substr("${var.prefix}-runner", 0, 54)}-${substr(md5("${var.prefix}-runner"), 0, 8)}"
   assume_role_policy   = templatefile("${path.module}/policies/instance-role-trust-policy.json", {})
   path                 = local.role_path
   permissions_boundary = var.role_permissions_boundary
@@ -55,6 +55,12 @@ resource "aws_iam_role_policy" "describe_tags" {
   name   = "runner-describe-tags"
   role   = aws_iam_role.runner.name
   policy = file("${path.module}/policies/instance-describe-tags-policy.json")
+}
+
+resource "aws_iam_role_policy" "create_tag" {
+  name   = "runner-create-tags"
+  role   = aws_iam_role.runner.name
+  policy = templatefile("${path.module}/policies/instance-create-tags-policy.json", {})
 }
 
 resource "aws_iam_role_policy_attachment" "managed_policies" {

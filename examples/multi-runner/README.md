@@ -3,7 +3,8 @@
 This module shows how to create GitHub action runners with multiple runner configuration together in one deployment. This example has the configurations for the following runner types with the relevant labels supported by them as matchers:
 
 - Linux ARM64 `["self-hosted", "linux", "arm64", "amazon"]`: Amazon Linux ARM64 non ephemeral runner based on module defaults
-- Linux Ubuntu `["self-hosted", "linux", "x64", "ubuntu-latest"]` or `["self-hosted", "linux", "x64", "ubuntu-2204"]`: Ubuntu runners non ephemeral based on a custom start script.
+- Linux Ubuntu 24.04 `["self-hosted", "linux", "x64", "ubuntu-latest"]` or `["self-hosted", "linux", "x64", "ubuntu-2404"]`: Ubuntu runners non ephemeral based on a custom start script.
+- Linux Ubuntu 22.04 `["self-hosted", "linux", "x64", "ubuntu-2204"]`: Ubuntu runners non ephemeral based on a custom start script.
 - Linux X64 `["self-hosted", "linux", "x64", "amazon"]`: Amazon X64 Linux runners ephemeral with retry enabled.
 - Windows X64 `["self-hosted", "windows", "x64", "servercore-2022"]`: Windows X64 Servercore 2022 runners non ephemeral based on a custom start script.
 
@@ -13,7 +14,7 @@ For exact match, all the labels defined in the workflow should be present in the
 
 ## Webhook
 
-For the list of provided runner configurations, there will be a single webhook and only a single Github App to receive the notifications for all types of workflow triggers.
+For the list of provided runner configurations, there will be a single webhook and only a single GitHub App to receive the notifications for all types of workflow triggers.
 
 ## Lambda distribution
 
@@ -52,7 +53,7 @@ terraform output -raw webhook_secret
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 5.27 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.21 |
 | <a name="requirement_local"></a> [local](#requirement\_local) | ~> 2.0 |
 | <a name="requirement_random"></a> [random](#requirement\_random) | ~> 3.0 |
 
@@ -60,7 +61,8 @@ terraform output -raw webhook_secret
 
 | Name | Version |
 |------|---------|
-| <a name="provider_random"></a> [random](#provider\_random) | 3.6.3 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.22.1 |
+| <a name="provider_random"></a> [random](#provider\_random) | 3.7.2 |
 
 ## Modules
 
@@ -74,7 +76,11 @@ terraform output -raw webhook_secret
 
 | Name | Type |
 |------|------|
+| [aws_ssm_parameter.al2023_arm64](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ssm_parameter) | resource |
 | [random_id.random](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/id) | resource |
+| [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
+| [aws_ssm_parameter.al2023_arm64](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/ssm_parameter) | data source |
+| [aws_ssm_parameter.al2023_x64](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/ssm_parameter) | data source |
 
 ## Inputs
 

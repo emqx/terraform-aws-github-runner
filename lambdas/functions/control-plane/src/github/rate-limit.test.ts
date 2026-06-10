@@ -2,33 +2,45 @@ import { ResponseHeaders } from '@octokit/types';
 import { createSingleMetric } from '@aws-github-runner/aws-powertools-util';
 import { MetricUnit } from '@aws-lambda-powertools/metrics';
 import { metricGitHubAppRateLimit } from './rate-limit';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { getParameter } from '@aws-github-runner/aws-ssm-util';
 
 process.env.PARAMETER_GITHUB_APP_ID_NAME = 'test';
-jest.mock('@aws-github-runner/aws-ssm-util', () => ({
-  ...jest.requireActual('@aws-github-runner/aws-ssm-util'),
-  // get parameter name from process.env.PARAMETER_GITHUB_APP_ID_NAME rerunt 1234
-  getParameter: jest.fn((name: string) => {
-    if (name === process.env.PARAMETER_GITHUB_APP_ID_NAME) {
-      return '1234';
-    } else {
-      return '';
-    }
-  }),
-}));
+vi.mock('@aws-github-runner/aws-ssm-util', async () => {
+  // Return only what we need without spreading actual
+  return {
+    getParameter: vi.fn((name: string) => {
+      if (name === process.env.PARAMETER_GITHUB_APP_ID_NAME) {
+        return '1234';
+      } else {
+        return '';
+      }
+    }),
+  };
+});
 
-jest.mock('@aws-github-runner/aws-powertools-util', () => ({
-  ...jest.requireActual('@aws-github-runner/aws-powertools-util'),
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  createSingleMetric: jest.fn((name: string, unit: string, value: number, dimensions?: Record<string, string>) => {
-    return {
-      addMetadata: jest.fn(),
-    };
-  }),
-}));
+vi.mock('@aws-github-runner/aws-powertools-util', async () => {
+  // Provide only what's needed without spreading actual
+  return {
+    // Mock the logger
+    logger: {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    },
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    createSingleMetric: vi.fn((name: string, unit: string, value: number, dimensions?: Record<string, string>) => {
+      return {
+        addMetadata: vi.fn(),
+      };
+    }),
+  };
+});
 
 describe('metricGitHubAppRateLimit', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('should update rate limit metric', async () => {
@@ -66,5 +78,28 @@ describe('metricGitHubAppRateLimit', () => {
     await metricGitHubAppRateLimit(undefined as unknown as ResponseHeaders);
 
     expect(createSingleMetric).not.toHaveBeenCalled();
+  });
+
+  it('should cache GitHub App ID and only call getParameter once', async () => {
+    // Reset modules to clear the appIdPromise cache
+    vi.resetModules();
+    const { metricGitHubAppRateLimit: freshMetricFunction } = await import('./rate-limit');
+
+    process.env.ENABLE_METRIC_GITHUB_APP_RATE_LIMIT = 'true';
+    const headers: ResponseHeaders = {
+      'x-ratelimit-remaining': '10',
+      'x-ratelimit-limit': '60',
+    };
+
+    const mockGetParameter = vi.mocked(getParameter);
+    mockGetParameter.mockClear();
+
+    await freshMetricFunction(headers);
+    await freshMetricFunction(headers);
+    await freshMetricFunction(headers);
+
+    // getParameter should only be called once due to caching
+    expect(mockGetParameter).toHaveBeenCalledTimes(1);
+    expect(mockGetParameter).toHaveBeenCalledWith(process.env.PARAMETER_GITHUB_APP_ID_NAME);
   });
 });

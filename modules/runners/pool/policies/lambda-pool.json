@@ -42,7 +42,17 @@
         {
             "Effect": "Allow",
             "Action": [
-                "ssm:GetParameter"
+              "ssm:GetParameters"
+            ],
+            "Resource": [
+                "${ssm_ami_id_parameter_arn}"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ssm:GetParameter",
+                "ssm:GetParameters"
             ],
             "Resource": [
                 "${github_app_key_base64_arn}",

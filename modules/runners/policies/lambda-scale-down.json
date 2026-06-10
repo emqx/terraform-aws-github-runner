@@ -15,7 +15,8 @@
       "Effect": "Allow",
       "Action": [
         "ec2:TerminateInstances",
-        "ec2:CreateTags"
+        "ec2:CreateTags",
+        "ec2:DeleteTags"
       ],
       "Resource": [
         "*"
@@ -30,7 +31,8 @@
       "Effect": "Allow",
       "Action": [
         "ec2:TerminateInstances",
-        "ec2:CreateTags"
+        "ec2:CreateTags",
+        "ec2:DeleteTags"
       ],
       "Resource": [
         "*"
@@ -44,7 +46,8 @@
     {
       "Effect": "Allow",
       "Action": [
-        "ssm:GetParameter"
+        "ssm:GetParameter",
+        "ssm:GetParameters"
       ],
       "Resource": [
         "${github_app_key_base64_arn}",

@@ -37,8 +37,18 @@ locals {
     "linux"   = "${path.module}/templates/start-runner.sh"
   }
 
-  ami_kms_key_arn = var.ami_kms_key_arn != null ? var.ami_kms_key_arn : ""
-  ami_filter      = merge(local.default_ami[var.runner_os], var.ami_filter)
+  # Handle AMI configuration
+  ami_config = var.ami != null ? var.ami : {
+    filter               = local.default_ami[var.runner_os]
+    owners               = ["amazon"]
+    id_ssm_parameter_arn = null
+    kms_key_arn          = null
+  }
+  ami_kms_key_arn           = local.ami_config.kms_key_arn != null ? local.ami_config.kms_key_arn : ""
+  ami_filter                = merge(local.default_ami[var.runner_os], local.ami_config.filter)
+  ami_id_ssm_module_managed = local.ami_config.id_ssm_parameter_arn == null
+  # Extract parameter name from ARN (format: arn:aws:ssm:region:account:parameter/path/to/param)
+  ami_id_ssm_parameter_name = local.ami_id_ssm_module_managed ? null : try(regex("parameter(/.+)$", local.ami_config.id_ssm_parameter_arn)[0], null)
 
   enable_job_queued_check = var.enable_job_queued_check == null ? !var.enable_ephemeral_runners : var.enable_job_queued_check
 
@@ -81,7 +91,29 @@ data "aws_ami" "runner" {
     }
   }
 
-  owners = var.ami_owners
+  owners = local.ami_config.owners
+}
+
+resource "aws_ssm_parameter" "runner_ami_id" {
+  count     = local.ami_id_ssm_module_managed ? 1 : 0
+  name      = "${var.ssm_paths.root}/${var.ssm_paths.config}/ami_id"
+  type      = "String"
+  data_type = "aws:ec2:image"
+  value     = data.aws_ami.runner.id
+
+  tags = merge(
+    local.tags,
+    {
+      # Remove parentheses from AMI name to comply with AWS tag constraints
+      "ghr:ami_name" = replace(data.aws_ami.runner.name, "/[()]/", "")
+    },
+    {
+      "ghr:ami_creation_date" = data.aws_ami.runner.creation_date
+    },
+    {
+      "ghr:ami_deprecation_time" = data.aws_ami.runner.deprecation_time
+    }
+  )
 }
 
 resource "aws_launch_template" "runner" {
@@ -131,6 +163,29 @@ resource "aws_launch_template" "runner" {
     }
   }
 
+  dynamic "cpu_options" {
+    for_each = var.cpu_options != null ? [var.cpu_options] : []
+    content {
+      core_count       = try(cpu_options.value.core_count, null)
+      threads_per_core = try(cpu_options.value.threads_per_core, null)
+    }
+  }
+
+  dynamic "placement" {
+    for_each = var.placement != null ? [var.placement] : []
+    content {
+      affinity                = try(placement.value.affinity, null)
+      availability_zone       = try(placement.value.availability_zone, null)
+      group_id                = try(placement.value.group_id, null)
+      group_name              = try(placement.value.group_name, null)
+      host_id                 = try(placement.value.host_id, null)
+      host_resource_group_arn = try(placement.value.host_resource_group_arn, null)
+      spread_domain           = try(placement.value.spread_domain, null)
+      tenancy                 = try(placement.value.tenancy, null)
+      partition_number        = try(placement.value.partition_number, null)
+    }
+  }
+
   monitoring {
     enabled = var.enable_runner_detailed_monitoring
   }
@@ -140,7 +195,7 @@ resource "aws_launch_template" "runner" {
   }
 
   instance_initiated_shutdown_behavior = "terminate"
-  image_id                             = data.aws_ami.runner.id
+  image_id                             = "resolve:ssm:${local.ami_id_ssm_module_managed ? aws_ssm_parameter.runner_ami_id[0].arn : var.ami.id_ssm_parameter_arn}"
   key_name                             = var.key_name
   ebs_optimized                        = var.ebs_optimized
 
@@ -165,6 +220,41 @@ resource "aws_launch_template" "runner" {
 
   tag_specifications {
     resource_type = "volume"
+    tags = merge(
+      local.tags,
+      {
+        "Name" = format("%s", local.name_runner)
+      },
+      {
+        "ghr:runner_name_prefix" = var.runner_name_prefix
+      },
+      var.runner_ec2_tags
+    )
+  }
+
+  # We avoid including the "spot-instances-request" tag_specifications block when on_demand_failover_for_errors is defined,
+  # because when using on-demand fallback, the spot instance request resource is not created and thus the tags would not apply.
+  # Additionally, tagging spot requests via the CreateFleetCommand in the Lambda function does not work as expected,
+  # so we rely on Terraform to manage these tags only when spot is exclusively used without on-demand failover.
+  dynamic "tag_specifications" {
+    for_each = var.instance_target_capacity_type == "spot" && length(var.enable_on_demand_failover_for_errors) == 0 ? [1] : [] # Include the block only if the value is "spot" and on_demand_failover_for_errors is not enabled
+    content {
+      resource_type = "spot-instances-request"
+      tags = merge(
+        local.tags,
+        {
+          "Name" = format("%s", local.name_runner)
+        },
+        {
+          "ghr:runner_name_prefix" = var.runner_name_prefix
+        },
+        var.runner_ec2_tags
+      )
+    }
+  }
+
+  tag_specifications {
+    resource_type = "network-interface"
     tags = merge(
       local.tags,
       {

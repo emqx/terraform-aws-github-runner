@@ -8,9 +8,10 @@ import {
   Filter,
   Image,
 } from '@aws-sdk/client-ec2';
-import { DescribeParametersCommand, GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
+import { SSMClient, DescribeParametersCommand } from '@aws-sdk/client-ssm';
 import { createChildLogger } from '@aws-github-runner/aws-powertools-util';
 import { getTracedAWSV3Client } from '@aws-github-runner/aws-powertools-util';
+import { getParameters } from '@aws-github-runner/aws-ssm-util';
 
 const logger = createChildLogger('ami');
 
@@ -62,34 +63,56 @@ function applyDefaults(options: AmiCleanupOptions): AmiCleanupOptions {
 }
 
 /**
- * Cleanup AMIs that are not in use anymore.
+ * Clean up old AMIs that are not actively used.
  *
- * @param options the cleanup options
+ * 1. Identify AMIs that are not referenced in Launch Templates or SSM
+ *    parameters
+ * 2. Keep AMIs newer than the specified age threshold
+ * 3. Delete the remaining AMIs and their associated snapshots
+ *
+ * @param options Configuration for the cleanup process
  */
 async function amiCleanup(options: AmiCleanupOptions): Promise<void> {
   const mergedOptions = applyDefaults(options) as AmiCleanupOptionsInternal;
   logger.info(`Cleaning up non used AMIs older then ${mergedOptions.minimumDaysOld} days`);
   logger.debug('Using the following options', { options: mergedOptions });
 
+  // Identify AMIs that are safe to delete (not referenced anywhere)
   const amisNotInUse = await getAmisNotInUse(mergedOptions);
 
+  // Delete each AMI with a small delay to avoid overwhelming the API
   for (const image of amisNotInUse) {
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100)); // Rate limiting
     await deleteAmi(image, mergedOptions);
   }
 }
 
-async function getAmisNotInUse(options: AmiCleanupOptions) {
+/**
+ * Filter out AMIs that are currently in use.
+ *
+ * 1. Discover AMIs referenced in SSM parameters (both explicit and wildcard
+ *    patterns)
+ * 2. Discover AMIs referenced in Launch Templates
+ * 3. Get all account-owned AMIs matching the provided filters
+ * 4. Exclude AMIs from (1) and (2)
+ *
+ * @param options Configuration for the cleanup process
+ * @returns Array of AMI objects that are not referenced and eligible for
+ *          deletion
+ */
+async function getAmisNotInUse(options: AmiCleanupOptions): Promise<Image[]> {
+  // Concurrently discover AMIs that are actively referenced and should be preserved
   const amiIdsInSSM = await getAmisReferedInSSM(options);
   const amiIdsInTemplates = await getAmiInLatestTemplates(options);
 
+  // Fetch all account-owned AMIs that match the specified filters
   const ec2Client = getTracedAWSV3Client(new EC2Client({}));
   logger.debug('Getting all AMIs from ec2 with filters', { filters: options.amiFilters });
   const amiEc2 = await ec2Client.send(
     new DescribeImagesCommand({
-      Owners: ['self'],
+      Owners: ['self'], // Only consider AMIs owned by this account
       MaxResults: options.maxItems ? options.maxItems : undefined,
-      Filters: options.amiFilters,
+      Filters: options.amiFilters, // Apply additional filters (e.g., state=available)
     }),
   );
   logger.debug('Found the following AMIs', { amiEc2 });
@@ -102,10 +125,13 @@ async function getAmisNotInUse(options: AmiCleanupOptions) {
       return 0;
     }
   });
-  logger.info(`found #${amiEc2.Images?.length} images in ec2`);
 
+  logger.info(`found #${amiEc2.Images?.length} images in ec2`);
   logger.info(`found #${amiIdsInSSM.length} images referenced in SSM`);
   logger.info(`found #${amiIdsInTemplates.length} images in latest versions of launch templates`);
+
+  // Filter out AMIs that are referenced in either SSM parameters or Launch
+  // Templates.
   const filteredAmiEc2 =
     amiEc2.Images?.filter(
       (image) => !amiIdsInSSM.includes(image.ImageId) && !amiIdsInTemplates.includes(image.ImageId),
@@ -158,61 +184,147 @@ async function deleteSnapshot(options: AmiCleanupOptions, amiDetails: Image, ec2
   });
 }
 
+/**
+ * Resolves the values of multiple SSM parameters by their names.
+ * Delegates batching to the shared `getParameters` utility.
+ * Doesn't fail on errors, but warns instead, as this process is best-effort.
+ *
+ * @param names - Array of SSM parameter names to resolve
+ * @returns Array of parameter values in the same order as input (undefined for missing/failed parameters)
+ */
+async function resolveSsmParameterValues(names: string[]): Promise<(string | undefined)[]> {
+  if (names.length === 0) {
+    return [];
+  }
+
+  try {
+    const parameterMap = await getParameters(names);
+
+    // Log warnings for parameters that couldn't be resolved
+    for (const name of names) {
+      if (!parameterMap.has(name)) {
+        logger.warn(`Failed to resolve image id from SSM parameter ${name}: Parameter not found or access denied`);
+      }
+    }
+
+    // Return values in the same order as input names
+    return names.map((name) => parameterMap.get(name));
+  } catch (error: unknown) {
+    logger.warn(`Failed to resolve image ids from SSM parameters ${names.join(', ')}`, { error });
+    // Mark all parameters as undefined on failure
+    return names.map(() => undefined);
+  }
+}
+
+/**
+ * Retrieve AMI IDs referenced in Launch Templates.
+ *
+ * Discover AMI IDs that are actively used in Launch Templates, which indicates
+ * they should not be cleaned up.
+ *
+ * @param options - Cleanup configuration including optional launch template name filters
+ * @returns Array of AMI IDs found in launch templates (may contain undefined values)
+ */
 async function getAmiInLatestTemplates(options: AmiCleanupOptions): Promise<(string | undefined)[]> {
   const ec2Client = getTracedAWSV3Client(new EC2Client({}));
-  const launnchTemplates = await ec2Client.send(
+
+  // Discover launch templates, optionally filtered by specific names. If no
+  // names provided, this will return all launch templates in the account
+  logger.debug('Describing launch templates', {
+    launchTemplateNames: options.launchTemplateNames,
+  });
+  const launchTemplates = await ec2Client.send(
     new DescribeLaunchTemplatesCommand({
       LaunchTemplateNames: options.launchTemplateNames,
     }),
   );
+  logger.debug('Found launch templates', { launchTemplates });
 
-  // lookup details of latest version of each launch template
-  const amiIdsInTemplates = await Promise.all(
-    launnchTemplates.LaunchTemplates?.map(async (launchTemplate) => {
-      const launchTemplateVersion = await ec2Client.send(
+  // For each template, fetch the default version and resolve any SSM aliases.
+  const amiIdsNested = await Promise.all(
+    (launchTemplates.LaunchTemplates ?? []).map(async (template) => {
+      const versionsResp = await ec2Client.send(
         new DescribeLaunchTemplateVersionsCommand({
-          LaunchTemplateId: launchTemplate.LaunchTemplateId,
-          Versions: ['$Default'],
+          LaunchTemplateId: template.LaunchTemplateId,
+          Versions: ['$Default'], // Only check the default version
+          // This means that references like `resolve:ssm:<parameter arn>` are
+          // dereferenced.
+          ResolveAlias: true,
         }),
       );
-      return launchTemplateVersion.LaunchTemplateVersions?.map(
-        (templateVersion) => templateVersion.LaunchTemplateData?.ImageId,
-      ).flat();
-    }) ?? [],
+
+      logger.debug('Found launch template versions', { versionsResp });
+      return (versionsResp.LaunchTemplateVersions ?? []).map((v) => v.LaunchTemplateData?.ImageId);
+    }),
   );
 
-  return amiIdsInTemplates.flat();
+  logger.debug('Found AMIs in launch templates', { amiIdsNested });
+  return amiIdsNested.flat();
 }
 
+/**
+ * Retrieve AMI IDs referenced in SSM Parameters.
+ *
+ * Resolve AMI IDs stored in SSM parameters, supporting both literal parameter
+ * names and wildcard patterns.
+ *
+ * @param options - Cleanup configuration including SSM parameter names/patterns to check
+ * @returns Array of AMI IDs found in SSM parameters (may contain undefined values)
+ */
 async function getAmisReferedInSSM(options: AmiCleanupOptions): Promise<(string | undefined)[]> {
   if (!options.ssmParameterNames || options.ssmParameterNames.length === 0) {
     return [];
   }
 
   const ssmClient = getTracedAWSV3Client(new SSMClient({}));
-  const ssmParams = await ssmClient.send(
-    new DescribeParametersCommand({
-      ParameterFilters: [
-        {
-          Key: 'Name',
-          Values: ['ami-id'],
-          Option: 'Contains',
-        },
-      ],
-    }),
-  );
-  logger.debug('Found the following SSM parameters', { ssmParams });
 
-  return await Promise.all(
-    (ssmParams.Parameters ?? []).map(async (param) => {
-      const paramValue = await ssmClient.send(
-        new GetParameterCommand({
-          Name: param.Name,
-        }),
-      );
-      return paramValue.Parameter?.Value;
-    }),
-  );
+  // Categorise parameter names into two groups for different handling strategies:
+  // 1. Explicit names: Direct parameter lookups (e.g.,
+  //    "/github-runner/config/ami_id"). These can be looked up directly.
+  // 2. Wildcard patterns: Require parameter discovery first (e.g., "*ami-id",
+  //    "*ami_id"). For these, we need to enumerate.
+  const explicitNames = options.ssmParameterNames.filter((n) => !n.startsWith('*'));
+  const wildcardPatterns = options.ssmParameterNames.filter((n) => n.startsWith('*'));
+
+  // Batch fetch explicit parameter values in chunks of 10 (AWS API limit)
+  const explicitValuesPromise = resolveSsmParameterValues(explicitNames);
+
+  // Handle wildcard patterns by first discovering matching parameters, then
+  // fetching their values
+  let wildcardValuesPromise: Promise<(string | undefined)[]> = Promise.resolve([]);
+  if (wildcardPatterns.length > 0) {
+    // Convert wildcard patterns to SSM ParameterFilters using Contains logic
+    // Example: "*ami-id" becomes a filter for parameters containing "ami-id"
+    const filters = wildcardPatterns.map((p) => ({
+      Key: 'Name',
+      Option: 'Contains',
+      Values: [p.replace(/^\*/g, '')],
+    }));
+
+    wildcardValuesPromise = (async () => {
+      try {
+        // Discover parameters matching the wildcard patterns
+        logger.debug('Describing SSM parameter', { filters });
+        const ssmParameters = await ssmClient.send(new DescribeParametersCommand({ ParameterFilters: filters }));
+
+        // Batch fetch the actual values of discovered parameters
+        const discoveredNames = (ssmParameters.Parameters ?? [])
+          .map((param) => param.Name)
+          .filter((name): name is string => name !== undefined);
+
+        return resolveSsmParameterValues(discoveredNames);
+      } catch (e) {
+        logger.warn('Failed to describe SSM parameters using wildcard patterns', { error: e });
+        return [];
+      }
+    })();
+  }
+
+  // Combine results from both explicit and wildcard parameter resolution
+  const [explicitValues, wildcardValues] = await Promise.all([explicitValuesPromise, wildcardValuesPromise]);
+  const values = [...explicitValues, ...wildcardValues];
+  logger.debug('Resolved SSM parameter values', { values });
+  return values;
 }
 
 export { amiCleanup, getAmisNotInUse };

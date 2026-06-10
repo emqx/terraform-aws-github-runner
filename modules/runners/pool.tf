@@ -17,10 +17,12 @@ module "pool" {
     instance_types                = var.instance_types
     kms_key_arn                   = local.kms_key_arn
     ami_kms_key_arn               = local.ami_kms_key_arn
+    ami_id_ssm_parameter_arn      = local.ami_id_ssm_module_managed ? aws_ssm_parameter.runner_ami_id[0].arn : var.ami.id_ssm_parameter_arn
     lambda = {
       log_level                      = var.log_level
       logging_retention_in_days      = var.logging_retention_in_days
       logging_kms_key_id             = var.logging_kms_key_id
+      log_class                      = var.log_class
       reserved_concurrent_executions = var.pool_lambda_reserved_concurrent_executions
       s3_bucket                      = var.lambda_s3_bucket
       s3_key                         = var.runners_lambda_s3_key
@@ -32,6 +34,7 @@ module "pool" {
       runtime                        = var.lambda_runtime
       timeout                        = var.pool_lambda_timeout
       zip                            = local.lambda_zip
+      parameter_store_tags           = local.parameter_store_tags
     }
     pool                      = var.pool_config
     role_path                 = local.role_path
@@ -41,6 +44,7 @@ module "pool" {
       ephemeral                            = var.enable_ephemeral_runners
       enable_jit_config                    = var.enable_jit_config
       enable_on_demand_failover_for_errors = var.enable_on_demand_failover_for_errors
+      scale_errors                         = var.scale_errors
       boot_time_in_minutes                 = var.runner_boot_time_in_minutes
       labels                               = var.runner_labels
       launch_template                      = aws_launch_template.runner
@@ -52,8 +56,8 @@ module "pool" {
     subnet_ids                           = var.subnet_ids
     ssm_token_path                       = "${var.ssm_paths.root}/${var.ssm_paths.tokens}"
     ssm_config_path                      = "${var.ssm_paths.root}/${var.ssm_paths.config}"
-    ami_id_ssm_parameter_name            = var.ami_id_ssm_parameter_name
-    ami_id_ssm_parameter_read_policy_arn = var.ami_id_ssm_parameter_name != null ? aws_iam_policy.ami_id_ssm_parameter_read[0].arn : null
+    ami_id_ssm_parameter_name            = local.ami_id_ssm_parameter_name
+    ami_id_ssm_parameter_read_policy_arn = local.ami_id_ssm_parameter_name != null ? aws_iam_policy.ami_id_ssm_parameter_read[0].arn : null
     tags                                 = local.tags
     lambda_tags                          = var.lambda_tags
     arn_ssm_parameters_path_config       = local.arn_ssm_parameters_path_config

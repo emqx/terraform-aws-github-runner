@@ -2,42 +2,58 @@ import { publishMessage } from '../aws/sqs';
 import { publishRetryMessage, checkAndRetryJob } from './job-retry';
 import { ActionRequestMessage, ActionRequestMessageRetry } from './scale-up';
 import { getOctokit } from '../github/octokit';
+import { jobRetryCheck } from '../lambda';
 import { Octokit } from '@octokit/rest';
-import { mocked } from 'jest-mock';
 import { createSingleMetric } from '@aws-github-runner/aws-powertools-util';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { SQSRecord } from 'aws-lambda';
 
-jest.mock('../aws/sqs');
-
-jest.mock('@aws-github-runner/aws-powertools-util', () => ({
-  ...jest.requireActual('@aws-github-runner/aws-powertools-util'),
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  createSingleMetric: jest.fn((name: string, unit: string, value: number, dimensions?: Record<string, string>) => {
-    return {
-      addMetadata: jest.fn(),
-    };
-  }),
+vi.mock('../aws/sqs', async () => ({
+  publishMessage: vi.fn(),
 }));
+
+vi.mock('@aws-github-runner/aws-powertools-util', async () => {
+  // This is a workaround for TypeScript's type checking
+  // Use vi.importActual with a type assertion to avoid spread operator type error
+  const actual = (await vi.importActual(
+    '@aws-github-runner/aws-powertools-util',
+  )) as typeof import('@aws-github-runner/aws-powertools-util');
+
+  return {
+    ...actual,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    createSingleMetric: vi.fn((name: string, unit: string, value: number, dimensions?: Record<string, string>) => {
+      return {
+        addMetadata: vi.fn(),
+      };
+    }),
+  };
+});
 
 const cleanEnv = process.env;
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   process.env = { ...cleanEnv };
 });
 
 const mockOctokit = {
   actions: {
-    getJobForWorkflowRun: jest.fn(),
+    getJobForWorkflowRun: vi.fn(),
   },
 };
 
-jest.mock('@octokit/rest', () => ({
-  Octokit: jest.fn().mockImplementation(() => mockOctokit),
+vi.mock('@octokit/rest', async () => ({
+  Octokit: vi.fn().mockImplementation(function () {
+    return mockOctokit;
+  }),
 }));
-jest.mock('../github/octokit');
+vi.mock('../github/octokit', async () => ({
+  getOctokit: vi.fn(),
+}));
 
-const mockCreateOctokitClient = mocked(getOctokit, { shallow: false });
-mockCreateOctokitClient.mockResolvedValue(new (Octokit as jest.MockedClass<typeof Octokit>)());
+const mockCreateOctokitClient = vi.mocked(getOctokit);
+mockCreateOctokitClient.mockResolvedValue(new Octokit());
 
 describe('Test job retry publish message', () => {
   const data = [
@@ -253,5 +269,95 @@ describe(`Test job retry check`, () => {
 
     // assert
     expect(publishMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('Test job retry handler (batch processing)', () => {
+  const context = {
+    requestId: 'request-id',
+    functionName: 'function-name',
+    functionVersion: 'function-version',
+    invokedFunctionArn: 'invoked-function-arn',
+    memoryLimitInMB: '128',
+    awsRequestId: 'aws-request-id',
+    logGroupName: 'log-group-name',
+    logStreamName: 'log-stream-name',
+    remainingTimeInMillis: () => 30000,
+    done: () => {},
+    fail: () => {},
+    succeed: () => {},
+    getRemainingTimeInMillis: () => 30000,
+    callbackWaitsForEmptyEventLoop: false,
+  };
+
+  function createSQSRecord(messageId: string): SQSRecord {
+    return {
+      messageId,
+      receiptHandle: 'receipt-handle',
+      body: JSON.stringify({
+        eventType: 'workflow_job',
+        id: 123,
+        installationId: 456,
+        repositoryName: 'test-repo',
+        repositoryOwner: 'test-owner',
+        repoOwnerType: 'Organization',
+        retryCounter: 0,
+      }),
+      attributes: {
+        ApproximateReceiveCount: '1',
+        SentTimestamp: '1234567890',
+        SenderId: 'sender-id',
+        ApproximateFirstReceiveTimestamp: '1234567891',
+      },
+      messageAttributes: {},
+      md5OfBody: 'md5',
+      eventSource: 'aws:sqs',
+      eventSourceARN: 'arn:aws:sqs:region:account:queue',
+      awsRegion: 'us-east-1',
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ENABLE_ORGANIZATION_RUNNERS = 'true';
+    process.env.JOB_QUEUE_SCALE_UP_URL = 'https://sqs.example.com/queue';
+  });
+
+  it('should handle multiple records in a single batch', async () => {
+    mockOctokit.actions.getJobForWorkflowRun.mockImplementation(() => ({
+      data: {
+        status: 'queued',
+      },
+      headers: {},
+    }));
+
+    const event = {
+      Records: [createSQSRecord('msg-1'), createSQSRecord('msg-2'), createSQSRecord('msg-3')],
+    };
+
+    await expect(jobRetryCheck(event, context)).resolves.not.toThrow();
+    expect(publishMessage).toHaveBeenCalledTimes(3);
+  });
+
+  it('should continue processing other records when one fails', async () => {
+    mockCreateOctokitClient
+      .mockResolvedValueOnce(new Octokit()) // First record succeeds
+      .mockRejectedValueOnce(new Error('API error')) // Second record fails
+      .mockResolvedValueOnce(new Octokit()); // Third record succeeds
+
+    mockOctokit.actions.getJobForWorkflowRun.mockImplementation(() => ({
+      data: {
+        status: 'queued',
+      },
+      headers: {},
+    }));
+
+    const event = {
+      Records: [createSQSRecord('msg-1'), createSQSRecord('msg-2'), createSQSRecord('msg-3')],
+    };
+
+    await expect(jobRetryCheck(event, context)).resolves.not.toThrow();
+    // There were two successful calls to publishMessage
+    expect(publishMessage).toHaveBeenCalledTimes(2);
   });
 });

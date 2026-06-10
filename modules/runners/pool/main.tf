@@ -42,11 +42,13 @@ resource "aws_lambda_function" "pool" {
       SSM_TOKEN_PATH                           = var.config.ssm_token_path
       SSM_CONFIG_PATH                          = var.config.ssm_config_path
       SUBNET_IDS                               = join(",", var.config.subnet_ids)
-      POWERTOOLS_SERVICE_NAME                  = "runners-pool"
+      POWERTOOLS_SERVICE_NAME                  = "${var.config.prefix}-pool"
       POWERTOOLS_TRACE_ENABLED                 = var.tracing_config.mode != null ? true : false
       POWERTOOLS_TRACER_CAPTURE_HTTPS_REQUESTS = var.tracing_config.capture_http_requests
       POWERTOOLS_TRACER_CAPTURE_ERROR          = var.tracing_config.capture_error
       ENABLE_ON_DEMAND_FAILOVER_FOR_ERRORS     = jsonencode(var.config.runner.enable_on_demand_failover_for_errors)
+      SSM_PARAMETER_STORE_TAGS                 = var.config.lambda.parameter_store_tags
+      SCALE_ERRORS                             = jsonencode(var.config.runner.scale_errors)
     }
   }
 
@@ -70,11 +72,12 @@ resource "aws_cloudwatch_log_group" "pool" {
   name              = "/aws/lambda/${aws_lambda_function.pool.function_name}"
   retention_in_days = var.config.lambda.logging_retention_in_days
   kms_key_id        = var.config.lambda.logging_kms_key_id
+  log_group_class   = var.config.lambda.log_class
   tags              = var.config.tags
 }
 
 resource "aws_iam_role" "pool" {
-  name                 = "${var.config.prefix}-action-pool-lambda-role"
+  name                 = "${substr("${var.config.prefix}-pool-lambda", 0, 54)}-${substr(md5("${var.config.prefix}-pool-lambda"), 0, 8)}"
   assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role_policy.json
   path                 = var.config.role_path
   permissions_boundary = var.config.role_permissions_boundary
@@ -91,6 +94,7 @@ resource "aws_iam_role_policy" "pool" {
     github_app_key_base64_arn      = var.config.github_app_parameters.key_base64.arn
     kms_key_arn                    = var.config.kms_key_arn
     ami_kms_key_arn                = var.config.ami_kms_key_arn
+    ssm_ami_id_parameter_arn       = var.config.ami_id_ssm_parameter_arn
   })
 }
 
@@ -188,13 +192,13 @@ resource "aws_iam_role" "scheduler" {
   permissions_boundary = var.config.role_permissions_boundary
 
   assume_role_policy = data.aws_iam_policy_document.scheduler_assume.json
+  tags               = var.config.tags
+}
 
-  inline_policy {
-    name   = "terraform"
-    policy = data.aws_iam_policy_document.scheduler.json
-  }
-
-  tags = var.config.tags
+resource "aws_iam_role_policy" "scheduler" {
+  name   = "terraform"
+  role   = aws_iam_role.scheduler.name
+  policy = data.aws_iam_policy_document.scheduler.json
 }
 
 resource "aws_scheduler_schedule" "pool" {

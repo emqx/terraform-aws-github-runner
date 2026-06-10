@@ -30,12 +30,23 @@
         {
             "Effect": "Allow",
             "Action": [
-                "ssm:GetParameter"
+                "ssm:GetParameter",
+                "ssm:GetParameters"
             ],
             "Resource": [
                 "${github_app_key_base64_arn}",
                 "${github_app_id_arn}",
-                "${ssm_config_path}/*"
+                "${ssm_config_path}/*",
+                "${ssm_ami_id_parameter_arn}"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+              "ssm:GetParameters"
+            ],
+            "Resource": [
+                "${ssm_ami_id_parameter_arn}"
             ]
         },
         {

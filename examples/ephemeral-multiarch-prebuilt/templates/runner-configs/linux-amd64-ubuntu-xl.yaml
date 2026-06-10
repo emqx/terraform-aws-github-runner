@@ -24,13 +24,14 @@ runner_config:
   scale_down_schedule_expression: cron(* * * * ? *)
   userdata_template: ./templates/user-data.sh
   enable_userdata: true
-  ami_owners:
-    - "self"
-  ami_filter:
-    name:
-      - github-runner-ubuntu-jammy-amd64-*
-    state:
-      - available
+  ami:
+    owners:
+      - "self"
+    filter:
+      name:
+        - github-runner-ubuntu-jammy-amd64-*
+      state:
+        - available
   enable_organization_runners: true
   enable_ephemeral_runners: true
   enable_job_queued_check: true

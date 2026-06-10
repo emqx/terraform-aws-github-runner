@@ -39,13 +39,13 @@ resource "aws_lambda_function" "dispatcher" {
       for k, v in {
         LOG_LEVEL                                = var.config.log_level
         POWERTOOLS_LOGGER_LOG_EVENT              = var.config.log_level == "debug" ? "true" : "false"
-        POWERTOOLS_SERVICE_NAME                  = "dispatcher"
+        POWERTOOLS_SERVICE_NAME                  = "${var.config.prefix}-dispatcher"
         POWERTOOLS_TRACE_ENABLED                 = var.config.tracing_config.mode != null ? true : false
         POWERTOOLS_TRACER_CAPTURE_HTTPS_REQUESTS = var.config.tracing_config.capture_http_requests
         POWERTOOLS_TRACER_CAPTURE_ERROR          = var.config.tracing_config.capture_error
         # Parameters required for lambda configuration
-        PARAMETER_RUNNER_MATCHER_CONFIG_PATH = var.config.ssm_parameter_runner_matcher_config.name
-        PARAMETER_RUNNER_MATCHER_VERSION     = var.config.ssm_parameter_runner_matcher_config.version # enforce cold start after Changes in SSM parameter
+        PARAMETER_RUNNER_MATCHER_CONFIG_PATH = join(":", [for p in var.config.ssm_parameter_runner_matcher_config : p.name])
+        PARAMETER_RUNNER_MATCHER_VERSION     = join(":", [for p in var.config.ssm_parameter_runner_matcher_config : p.version]) # enforce cold start after Changes in SSM parameter
         REPOSITORY_ALLOW_LIST                = jsonencode(var.config.repository_white_list)
       } : k => v if v != null
     }
@@ -73,6 +73,7 @@ resource "aws_cloudwatch_log_group" "dispatcher" {
   name              = "/aws/lambda/${aws_lambda_function.dispatcher.function_name}"
   retention_in_days = var.config.logging_retention_in_days
   kms_key_id        = var.config.logging_kms_key_id
+  log_group_class   = var.config.log_class
   tags              = var.config.tags
 }
 
@@ -85,7 +86,7 @@ resource "aws_lambda_permission" "allow_cloudwatch_to_call_lambda" {
 }
 
 resource "aws_iam_role" "dispatcher_lambda" {
-  name                 = "${var.config.prefix}-dispatcher-lambda-role"
+  name                 = "${substr("${var.config.prefix}-dispatcher-lambda", 0, 54)}-${substr(md5("${var.config.prefix}-dispatcher-lambda"), 0, 8)}"
   assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role_policy.json
   path                 = var.config.role_path
   permissions_boundary = var.config.role_permissions_boundary
@@ -117,7 +118,7 @@ resource "aws_iam_role_policy" "dispatcher_sqs" {
 
 resource "aws_iam_role_policy" "dispatcher_kms" {
   name = "kms-policy"
-  role = aws_iam_role.webhook_lambda.name
+  role = aws_iam_role.dispatcher_lambda.name
 
   policy = templatefile("${path.module}/../policies/lambda-kms.json", {
     kms_key_arn = var.config.kms_key_arn != null ? var.config.kms_key_arn : "arn:${var.config.aws_partition}:kms:::CMK_NOT_IN_USE"
@@ -129,7 +130,11 @@ resource "aws_iam_role_policy" "dispatcher_ssm" {
   role = aws_iam_role.dispatcher_lambda.name
 
   policy = templatefile("${path.module}/../policies/lambda-ssm.json", {
-    resource_arns = jsonencode([var.config.ssm_parameter_runner_matcher_config.arn])
+    resource_arns = jsonencode(
+      concat(
+        [for p in var.config.ssm_parameter_runner_matcher_config : p.arn]
+      )
+    )
   })
 }
 

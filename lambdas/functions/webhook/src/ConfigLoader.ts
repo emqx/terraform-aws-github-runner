@@ -1,4 +1,4 @@
-import { getParameter } from '@aws-github-runner/aws-ssm-util';
+import { getParameter, getParameters } from '@aws-github-runner/aws-ssm-util';
 import { RunnerMatcherConfig } from './sqs';
 import { logger } from '@aws-github-runner/aws-powertools-util';
 
@@ -87,9 +87,47 @@ abstract class BaseConfig {
   }
 }
 
-export class ConfigWebhook extends BaseConfig {
-  repositoryAllowList: string[] = [];
+abstract class MatcherAwareConfig extends BaseConfig {
   matcherConfig: RunnerMatcherConfig[] = [];
+
+  protected async loadMatcherConfig(paramPathsEnv: string) {
+    if (!paramPathsEnv || paramPathsEnv === 'undefined' || paramPathsEnv === 'null' || !paramPathsEnv.includes(':')) {
+      // Single path or invalid string → load directly
+      await this.loadParameter(paramPathsEnv, 'matcherConfig');
+      return;
+    }
+
+    const paths = paramPathsEnv
+      .split(':')
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    // Batch fetch all matcher config paths in a single SSM API call
+    try {
+      const params = await getParameters(paths);
+      let combinedString = '';
+      for (const path of paths) {
+        const value = params.get(path);
+        if (value) {
+          combinedString += value;
+        } else {
+          this.configLoadingErrors.push(
+            `Failed to load parameter for matcherConfig from path ${path}: Parameter not found`,
+          );
+        }
+      }
+
+      if (combinedString) {
+        this.matcherConfig = JSON.parse(combinedString);
+      }
+    } catch (error) {
+      this.configLoadingErrors.push(`Failed to load/parse combined matcher config: ${(error as Error).message}`);
+    }
+  }
+}
+
+export class ConfigWebhook extends MatcherAwareConfig {
+  repositoryAllowList: string[] = [];
   webhookSecret: string = '';
   workflowJobEventSecondaryQueue: string = '';
 
@@ -97,7 +135,7 @@ export class ConfigWebhook extends BaseConfig {
     this.loadEnvVar(process.env.REPOSITORY_ALLOW_LIST, 'repositoryAllowList', []);
 
     await Promise.all([
-      this.loadParameter(process.env.PARAMETER_RUNNER_MATCHER_CONFIG_PATH, 'matcherConfig'),
+      this.loadMatcherConfig(process.env.PARAMETER_RUNNER_MATCHER_CONFIG_PATH),
       this.loadParameter(process.env.PARAMETER_GITHUB_APP_WEBHOOK_SECRET, 'webhookSecret'),
     ]);
 
@@ -121,14 +159,13 @@ export class ConfigWebhookEventBridge extends BaseConfig {
   }
 }
 
-export class ConfigDispatcher extends BaseConfig {
+export class ConfigDispatcher extends MatcherAwareConfig {
   repositoryAllowList: string[] = [];
-  matcherConfig: RunnerMatcherConfig[] = [];
   workflowJobEventSecondaryQueue: string = ''; // Deprecated
 
   async loadConfig(): Promise<void> {
     this.loadEnvVar(process.env.REPOSITORY_ALLOW_LIST, 'repositoryAllowList', []);
-    await this.loadParameter(process.env.PARAMETER_RUNNER_MATCHER_CONFIG_PATH, 'matcherConfig');
+    await this.loadMatcherConfig(process.env.PARAMETER_RUNNER_MATCHER_CONFIG_PATH);
 
     validateRunnerMatcherConfig(this);
   }

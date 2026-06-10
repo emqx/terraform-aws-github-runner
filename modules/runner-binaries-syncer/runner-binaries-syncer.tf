@@ -70,11 +70,12 @@ resource "aws_cloudwatch_log_group" "syncer" {
   name              = "/aws/lambda/${aws_lambda_function.syncer.function_name}"
   retention_in_days = var.logging_retention_in_days
   kms_key_id        = var.logging_kms_key_id
+  log_group_class   = var.log_class
   tags              = var.tags
 }
 
 resource "aws_iam_role" "syncer_lambda" {
-  name                 = "${var.prefix}-action-syncer-lambda-role"
+  name                 = "${substr("${var.prefix}-syncer-lambda", 0, 54)}-${substr(md5("${var.prefix}-syncer-lambda"), 0, 8)}"
   assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role_policy.json
   path                 = local.role_path
   permissions_boundary = var.role_permissions_boundary

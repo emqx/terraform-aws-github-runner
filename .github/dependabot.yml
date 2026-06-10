@@ -15,11 +15,20 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      github:
+        patterns:
+          - "actions/*"
+          - "github/"
 
   - package-ecosystem: "npm"
     directory: "/lambdas"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       aws:
         patterns:
@@ -30,14 +39,71 @@ updates:
       aws-powertools:
         patterns:
           - "@aws-lambda-powertools/*"
+      nx:
+        patterns:
+          - "@nx/*"
+          - "nx/*"
+      eslint:
+        patterns:
+          - "eslint*"
+          - "@typescript-eslint-*"
+      vite:
+        patterns:
+          - "vite*"
+          - "@vite/*"
 
-    ignore:
-      - dependency-name: "@middy/core"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@octokit/*"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "eslint"
-        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "fix(lambda)"
       prefix-development: "chore(lambda)"
+    # Ignore major version updates for Node.js related packages to keep aligned with Lambda runtime as configured via Terraform
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "docker"
+    directory: "/.ci/Dockerfile"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "chore(docker)"
+    # Ignore major version updates for Node.js Docker images to keep aligned with Lambda runtime as configured via Terraform
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "docker"
+    directory: "/.devcontainer/Dockerfile"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "chore(devcontainer)"
+    # Ignore major version updates for Node.js Docker images to keep aligned with Lambda runtime as configured via Terraform
+    ignore:
+      - dependency-name: "mcr.microsoft.com/vscode/devcontainers/typescript-node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "pip"
+    directory: "/.github/workflows/mkdocs"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      python-deps:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore(docs)"

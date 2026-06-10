@@ -1,4 +1,5 @@
 import { DefaultTargetCapacityType, SpotAllocationStrategy } from '@aws-sdk/client-ec2';
+import { LambdaRunnerSource } from '../scale-runners/scale-up';
 
 export type RunnerType = 'Org' | 'Repo';
 
@@ -10,6 +11,8 @@ export interface RunnerList {
   repo?: string;
   org?: string;
   orphan?: boolean;
+  runnerId?: string;
+  bypassRemoval?: boolean;
 }
 
 export interface RunnerInfo {
@@ -42,7 +45,9 @@ export interface RunnerInputParameters {
     instanceAllocationStrategy: SpotAllocationStrategy;
   };
   numberOfRunners: number;
+  source: LambdaRunnerSource;
   amiIdSsmParameterName?: string;
   tracingEnabled?: boolean;
   onDemandFailoverOnError?: string[];
+  scaleErrors: string[];
 }

@@ -18,6 +18,7 @@ variable "config" {
     role_path                 = optional(string, null)
     logging_retention_in_days = optional(number, 180)
     logging_kms_key_id        = optional(string, null)
+    log_class                 = optional(string, "STANDARD")
     lambda_s3_bucket          = optional(string, null)
     lambda_s3_key             = optional(string, null)
     lambda_s3_object_version  = optional(string, null)
@@ -28,7 +29,7 @@ variable "config" {
     repository_white_list = optional(list(string), [])
     kms_key_arn           = optional(string, null)
     log_level             = optional(string, "info")
-    lambda_runtime        = optional(string, "nodejs22.x")
+    lambda_runtime        = optional(string, "nodejs24.x")
     aws_partition         = optional(string, "aws")
     lambda_architecture   = optional(string, "arm64")
     github_app_parameters = object({
@@ -41,10 +42,10 @@ variable "config" {
     }), {})
     lambda_tags       = optional(map(string), {})
     api_gw_source_arn = string
-    ssm_parameter_runner_matcher_config = object({
+    ssm_parameter_runner_matcher_config = list(object({
       name    = string
       arn     = string
       version = string
-    })
+    }))
   })
 }

@@ -22,7 +22,7 @@ resource "aws_lambda_function" "ami_housekeeper" {
       LOG_LEVEL                                = var.log_level
       POWERTOOLS_LOGGER_LOG_EVENT              = var.log_level == "debug" ? "true" : "false"
       AMI_CLEANUP_OPTIONS                      = jsonencode(var.cleanup_config)
-      POWERTOOLS_SERVICE_NAME                  = "ami-housekeeper"
+      POWERTOOLS_SERVICE_NAME                  = "${var.prefix}-ami-housekeeper"
       POWERTOOLS_TRACE_ENABLED                 = var.tracing_config.mode != null ? true : false
       POWERTOOLS_TRACER_CAPTURE_HTTPS_REQUESTS = var.tracing_config.capture_http_requests
       POWERTOOLS_TRACER_CAPTURE_ERROR          = var.tracing_config.capture_error
@@ -51,11 +51,12 @@ resource "aws_cloudwatch_log_group" "ami_housekeeper" {
   name              = "/aws/lambda/${aws_lambda_function.ami_housekeeper.function_name}"
   retention_in_days = var.logging_retention_in_days
   kms_key_id        = var.logging_kms_key_id
+  log_group_class   = var.log_class
   tags              = var.tags
 }
 
 resource "aws_iam_role" "ami_housekeeper" {
-  name                 = "${var.prefix}-ami-housekeeper-role"
+  name                 = "${substr("${var.prefix}-ami-housekeeper", 0, 54)}-${substr(md5("${var.prefix}-ami-housekeeper"), 0, 8)}"
   assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role_policy.json
   path                 = local.role_path
   permissions_boundary = var.role_permissions_boundary

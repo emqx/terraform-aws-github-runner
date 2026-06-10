@@ -1,49 +1,73 @@
 import { Octokit } from '@octokit/rest';
-import { mocked } from 'jest-mock';
+import { RequestError } from '@octokit/request-error';
 import moment from 'moment';
 import nock from 'nock';
 
 import { RunnerInfo, RunnerList } from '../aws/runners.d';
 import * as ghAuth from '../github/auth';
-import { listEC2Runners, terminateRunner, tag } from './../aws/runners';
+import { listEC2Runners, terminateRunner, tag, untag } from './../aws/runners';
 import { githubCache } from './cache';
 import { newestFirstStrategy, oldestFirstStrategy, scaleDown } from './scale-down';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const mockOctokit = {
   apps: {
-    getOrgInstallation: jest.fn(),
-    getRepoInstallation: jest.fn(),
+    getOrgInstallation: vi.fn(),
+    getRepoInstallation: vi.fn(),
   },
   actions: {
-    listSelfHostedRunnersForRepo: jest.fn(),
-    listSelfHostedRunnersForOrg: jest.fn(),
-    deleteSelfHostedRunnerFromOrg: jest.fn(),
-    deleteSelfHostedRunnerFromRepo: jest.fn(),
-    getSelfHostedRunnerForOrg: jest.fn(),
-    getSelfHostedRunnerForRepo: jest.fn(),
+    listSelfHostedRunnersForRepo: vi.fn(),
+    listSelfHostedRunnersForOrg: vi.fn(),
+    deleteSelfHostedRunnerFromOrg: vi.fn(),
+    deleteSelfHostedRunnerFromRepo: vi.fn(),
+    getSelfHostedRunnerForOrg: vi.fn(),
+    getSelfHostedRunnerForRepo: vi.fn(),
   },
-  paginate: jest.fn(),
+  paginate: vi.fn(),
 };
-jest.mock('@octokit/rest', () => ({
-  Octokit: jest.fn().mockImplementation(() => mockOctokit),
+vi.mock('@octokit/rest', () => ({
+  Octokit: vi.fn().mockImplementation(function () {
+    return mockOctokit;
+  }),
 }));
 
-jest.mock('./../aws/runners', () => ({
-  ...jest.requireActual('./../aws/runners'),
-  tag: jest.fn(),
-  terminateRunner: jest.fn(),
-  listEC2Runners: jest.fn(),
+vi.mock('./../aws/runners', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    tag: vi.fn(),
+    untag: vi.fn(),
+    terminateRunner: vi.fn(),
+    listEC2Runners: vi.fn(),
+  };
+});
+vi.mock('./../github/auth', async () => ({
+  createGithubAppAuth: vi.fn(),
+  createGithubInstallationAuth: vi.fn(),
+  createOctokitClient: vi.fn(),
 }));
-jest.mock('./../github/auth');
-jest.mock('./cache');
 
-const mocktokit = Octokit as jest.MockedClass<typeof Octokit>;
-const mockedAppAuth = mocked(ghAuth.createGithubAppAuth, { shallow: false });
-const mockedInstallationAuth = mocked(ghAuth.createGithubInstallationAuth, { shallow: false });
-const mockCreateClient = mocked(ghAuth.createOctokitClient, { shallow: false });
-const mockListRunners = mocked(listEC2Runners);
-const mockTagRunners = mocked(tag);
-const mockTerminateRunners = mocked(terminateRunner);
+vi.mock('./cache', async () => ({
+  githubCache: {
+    getRunner: vi.fn(),
+    addRunner: vi.fn(),
+    clients: new Map(),
+    runners: new Map(),
+    reset: vi.fn().mockImplementation(() => {
+      githubCache.clients.clear();
+      githubCache.runners.clear();
+    }),
+  },
+}));
+
+const mocktokit = Octokit as vi.MockedClass<typeof Octokit>;
+const mockedAppAuth = vi.mocked(ghAuth.createGithubAppAuth);
+const mockedInstallationAuth = vi.mocked(ghAuth.createGithubInstallationAuth);
+const mockCreateClient = vi.mocked(ghAuth.createOctokitClient);
+const mockListRunners = vi.mocked(listEC2Runners);
+const mockTagRunners = vi.mocked(tag);
+const mockUntagRunners = vi.mocked(untag);
+const mockTerminateRunners = vi.mocked(terminateRunner);
 
 export interface TestData {
   repositoryName: string;
@@ -80,8 +104,8 @@ describe('Scale down runners', () => {
     process.env.RUNNER_BOOT_TIME_IN_MINUTES = MINIMUM_BOOT_TIME.toString();
 
     nock.disableNetConnect();
-    jest.clearAllMocks();
-    jest.resetModules();
+    vi.clearAllMocks();
+    vi.resetModules();
     githubCache.clients.clear();
     githubCache.runners.clear();
     mockOctokit.apps.getOrgInstallation.mockImplementation(() => ({
@@ -262,6 +286,25 @@ describe('Scale down runners', () => {
         checkNonTerminated(runners);
       });
 
+      it(`Should not terminate runner with bypass-removal tag set.`, async () => {
+        // setup
+        const runners = [
+          createRunnerTestData('idle-with-bypass', type, MINIMUM_TIME_RUNNING_IN_MINUTES + 10, true, false, false),
+        ];
+        // Set bypass-removal tag
+        runners[0].bypassRemoval = true;
+
+        mockGitHubRunners(runners);
+        mockAwsRunners(runners);
+
+        // act
+        await scaleDown();
+
+        // assert
+        expect(terminateRunner).not.toHaveBeenCalled();
+        checkNonTerminated(runners);
+      });
+
       it(`Should not terminate a runner that became busy just before deregister runner.`, async () => {
         // setup
         const runners = [
@@ -293,7 +336,7 @@ describe('Scale down runners', () => {
         checkNonTerminated(runners);
       });
 
-      it(`Should terminate orphan.`, async () => {
+      it(`Should terminate orphan (Non JIT)`, async () => {
         // setup
         const orphanRunner = createRunnerTestData('orphan-1', type, MINIMUM_BOOT_TIME + 1, false, false, false);
         const idleRunner = createRunnerTestData('idle-1', type, MINIMUM_BOOT_TIME + 1, true, false, false);
@@ -315,6 +358,7 @@ describe('Scale down runners', () => {
             Value: 'true',
           },
         ]);
+
         expect(mockTagRunners).not.toHaveBeenCalledWith(idleRunner.instanceId, expect.anything());
 
         // next cycle, update test data set orphan to true and terminate should be true
@@ -327,6 +371,173 @@ describe('Scale down runners', () => {
         // assert
         checkTerminated(runners);
         checkNonTerminated(runners);
+      });
+
+      it('Should test if orphaned runner, untag if online and busy, else terminate (JIT)', async () => {
+        // arrange
+        const orphanRunner = createRunnerTestData(
+          'orphan-jit',
+          type,
+          MINIMUM_BOOT_TIME + 1,
+          false,
+          true,
+          false,
+          undefined,
+          1234567890,
+        );
+        const runners = [orphanRunner];
+
+        mockGitHubRunners([]);
+        mockAwsRunners(runners);
+
+        if (type === 'Repo') {
+          mockOctokit.actions.getSelfHostedRunnerForRepo.mockResolvedValueOnce({
+            data: { id: 1234567890, name: orphanRunner.instanceId, busy: true, status: 'online' },
+          });
+        } else {
+          mockOctokit.actions.getSelfHostedRunnerForOrg.mockResolvedValueOnce({
+            data: { id: 1234567890, name: orphanRunner.instanceId, busy: true, status: 'online' },
+          });
+        }
+
+        // act
+        await scaleDown();
+
+        // assert
+        expect(mockUntagRunners).toHaveBeenCalledWith(orphanRunner.instanceId, [{ Key: 'ghr:orphan', Value: 'true' }]);
+        expect(mockTerminateRunners).not.toHaveBeenCalledWith(orphanRunner.instanceId);
+
+        // arrange
+        if (type === 'Repo') {
+          mockOctokit.actions.getSelfHostedRunnerForRepo.mockResolvedValueOnce({
+            data: { runnerId: 1234567890, name: orphanRunner.instanceId, busy: true, status: 'offline' },
+          });
+        } else {
+          mockOctokit.actions.getSelfHostedRunnerForOrg.mockResolvedValueOnce({
+            data: { runnerId: 1234567890, name: orphanRunner.instanceId, busy: true, status: 'offline' },
+          });
+        }
+
+        // act
+        await scaleDown();
+
+        // assert
+        expect(mockTerminateRunners).toHaveBeenCalledWith(orphanRunner.instanceId);
+      });
+
+      it('Should handle 404 error when checking orphaned runner (JIT) - treat as orphaned', async () => {
+        // arrange
+        const orphanRunner = createRunnerTestData(
+          'orphan-jit-404',
+          type,
+          MINIMUM_BOOT_TIME + 1,
+          false,
+          true,
+          true, // should be terminated when 404
+          undefined,
+          1234567890,
+        );
+        const runners = [orphanRunner];
+
+        mockGitHubRunners([]);
+        mockAwsRunners(runners);
+
+        // Mock 404 error response
+        const error404 = new RequestError('Runner not found', 404, {
+          request: {
+            method: 'GET',
+            url: 'https://api.github.com/test',
+            headers: {},
+          },
+        });
+
+        if (type === 'Repo') {
+          mockOctokit.actions.getSelfHostedRunnerForRepo.mockRejectedValueOnce(error404);
+        } else {
+          mockOctokit.actions.getSelfHostedRunnerForOrg.mockRejectedValueOnce(error404);
+        }
+
+        // act
+        await scaleDown();
+
+        // assert - should terminate since 404 means runner doesn't exist on GitHub
+        expect(mockTerminateRunners).toHaveBeenCalledWith(orphanRunner.instanceId);
+      });
+
+      it('Should handle 404 error when checking runner busy state - treat as not busy', async () => {
+        // arrange
+        const runner = createRunnerTestData(
+          'runner-404',
+          type,
+          MINIMUM_TIME_RUNNING_IN_MINUTES + 1,
+          true,
+          false,
+          true, // should be terminated since not busy due to 404
+        );
+        const runners = [runner];
+
+        mockGitHubRunners(runners);
+        mockAwsRunners(runners);
+
+        // Mock 404 error response for busy state check
+        const error404 = new RequestError('Runner not found', 404, {
+          request: {
+            method: 'GET',
+            url: 'https://api.github.com/test',
+            headers: {},
+          },
+        });
+
+        if (type === 'Repo') {
+          mockOctokit.actions.getSelfHostedRunnerForRepo.mockRejectedValueOnce(error404);
+        } else {
+          mockOctokit.actions.getSelfHostedRunnerForOrg.mockRejectedValueOnce(error404);
+        }
+
+        // act
+        await scaleDown();
+
+        // assert - should terminate since 404 means runner is not busy
+        checkTerminated(runners);
+      });
+
+      it('Should re-throw non-404 errors when checking runner state', async () => {
+        // arrange
+        const orphanRunner = createRunnerTestData(
+          'orphan-error',
+          type,
+          MINIMUM_BOOT_TIME + 1,
+          false,
+          true,
+          false,
+          undefined,
+          1234567890,
+        );
+        const runners = [orphanRunner];
+
+        mockGitHubRunners([]);
+        mockAwsRunners(runners);
+
+        // Mock non-404 error response
+        const error500 = new RequestError('Internal server error', 500, {
+          request: {
+            method: 'GET',
+            url: 'https://api.github.com/test',
+            headers: {},
+          },
+        });
+
+        if (type === 'Repo') {
+          mockOctokit.actions.getSelfHostedRunnerForRepo.mockRejectedValueOnce(error500);
+        } else {
+          mockOctokit.actions.getSelfHostedRunnerForOrg.mockRejectedValueOnce(error500);
+        }
+
+        // act & assert - should not throw because error handling is in terminateOrphan
+        await expect(scaleDown()).resolves.not.toThrow();
+
+        // Should not terminate since the error was not a 404
+        expect(terminateRunner).not.toHaveBeenCalledWith(orphanRunner.instanceId);
       });
 
       it(`Should ignore errors when termination orphan fails.`, async () => {
@@ -606,6 +817,7 @@ function createRunnerTestData(
   orphan: boolean,
   shouldBeTerminated: boolean,
   owner?: string,
+  runnerId?: number,
 ): RunnerTestItem {
   return {
     instanceId: `i-${name}-${type.toLowerCase()}`,
@@ -619,5 +831,7 @@ function createRunnerTestData(
     registered,
     orphan,
     shouldBeTerminated,
+    runnerId: runnerId !== undefined ? String(runnerId) : undefined,
+    bypassRemoval: false,
   };
 }

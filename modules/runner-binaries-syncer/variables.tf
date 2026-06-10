@@ -45,6 +45,12 @@ variable "s3_logging_bucket_prefix" {
   }
 }
 
+variable "s3_tags" {
+  description = "Map of tags that will be added to the S3 bucket. Note these are additional tags to the default tags."
+  type        = map(string)
+  default     = {}
+}
+
 variable "state_event_rule_binaries_syncer" {
   type        = string
   description = "Option to disable EventBridge Lambda trigger for the binary syncer, useful to stop automatic updates of binary distribution"
@@ -126,6 +132,17 @@ variable "logging_kms_key_id" {
   description = "Specifies the kms key id to encrypt the logs with"
   type        = string
   default     = null
+}
+
+variable "log_class" {
+  description = "The log class of the CloudWatch log group. Valid values are `STANDARD` or `INFREQUENT_ACCESS`."
+  type        = string
+  default     = "STANDARD"
+
+  validation {
+    condition     = contains(["STANDARD", "INFREQUENT_ACCESS"], var.log_class)
+    error_message = "`log_class` must be either `STANDARD` or `INFREQUENT_ACCESS`."
+  }
 }
 
 variable "lambda_s3_bucket" {
@@ -214,7 +231,7 @@ variable "lambda_principals" {
 variable "lambda_runtime" {
   description = "AWS Lambda runtime."
   type        = string
-  default     = "nodejs22.x"
+  default     = "nodejs24.x"
 }
 
 variable "lambda_architecture" {
