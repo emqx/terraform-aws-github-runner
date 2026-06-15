@@ -7,6 +7,13 @@ variable "github_app" {
   })
 }
 
+variable "webhook_secret" {
+  description = "Shared secret used to validate GitHub webhook deliveries against the GitHub App config. Supply a high-entropy value (e.g. `openssl rand -hex 20`); in CI it is sourced from the WEBHOOK_SECRET Actions secret."
+
+  type      = string
+  sensitive = true
+}
+
 variable "environment" {
   description = "Environment name, used as prefix"
 

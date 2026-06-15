@@ -1,11 +1,7 @@
 locals {
-  webhook_secret = random_id.random.hex
+  webhook_secret = var.webhook_secret
 
   multi_runner_config = { for c in fileset("${path.module}/templates/runner-configs", "*.yaml") : trimsuffix(c, ".yaml") => yamldecode(file("${path.module}/templates/runner-configs/${c}")) }
-}
-
-resource "random_id" "random" {
-  byte_length = 20
 }
 
 module "vpc" {
@@ -56,7 +52,7 @@ module "runners" {
   github_app = {
     key_base64     = var.github_app.key_base64
     id             = var.github_app.id
-    webhook_secret = random_id.random.hex
+    webhook_secret = local.webhook_secret
   }
 
   logging_retention_in_days = 7

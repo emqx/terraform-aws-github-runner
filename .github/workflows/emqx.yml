@@ -58,6 +58,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: hashicorp/terraform:1.10.1
+    outputs:
+      webhook_endpoint: ${{ steps.webhook.outputs.endpoint }}
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -74,6 +76,7 @@ jobs:
             id         = ${{ secrets.APP_ID }}
             key_base64 = "${{ secrets.APP_KEY_BASE64 }}"
           }
+          webhook_secret = "${{ secrets.WEBHOOK_SECRET }}"
           aws_region  = "eu-west-1"
           environment = "ci-eu"
           cleanup_org_runners = {
@@ -94,6 +97,10 @@ jobs:
           terraform init
           terraform refresh -var-file ./emqx.tfvars
           terraform apply -auto-approve -var-file ./emqx.tfvars
+      - name: Capture webhook endpoint
+        id: webhook
+        working-directory: examples/ephemeral-multiarch-prebuilt
+        run: echo "endpoint=$(terraform output --raw webhook_endpoint)" >> "$GITHUB_OUTPUT"
 
   webhook:
     name: Update GitHub App webhook
@@ -105,19 +112,18 @@ jobs:
       # The webhook-github-app module tries this via a local-exec provisioner
       # with on_failure=continue, which fails silently in the terraform
       # container (no bash/gh/openssl). Run it here where the tools exist and
-      # a failure fails the pipeline.
+      # a failure fails the pipeline. The endpoint comes from the deploy job's
+      # output and the secret straight from the Actions secret (the same value
+      # terraform receives), so update-app.sh skips terraform and this job
+      # needs neither terraform nor AWS credentials.
       - name: Point GitHub App webhook at the deployed endpoint
-        working-directory: examples/ephemeral-multiarch-prebuilt
         env:
-          AWS_REGION: eu-west-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           GH_TOKEN: ${{ github.token }}
           APP_ID: ${{ secrets.APP_ID }}
           APP_PRIVATE_KEY_BASE64: ${{ secrets.APP_KEY_BASE64 }}
-        run: |
-          terraform init
-          ../../modules/webhook-github-app/bin/update-app.sh
+          WEBHOOK_ENDPOINT: ${{ needs.deploy.outputs.webhook_endpoint }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+        run: ./modules/webhook-github-app/bin/update-app.sh
 
   ami-gc:
     name: Deregister oldest AMI
