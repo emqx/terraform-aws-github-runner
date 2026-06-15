@@ -6,8 +6,8 @@ set -e
 function testCommand() {
   if ! command -v $1 &> /dev/null
   then
-      echo "$1 could not be found"
-      exit
+      echo "$1 could not be found" >&2
+      exit 1
   fi
 }
 
@@ -63,6 +63,18 @@ fi
 if [ -z "$WEBHOOK_SECRET" ]; then
   testCommand terraform
   WEBHOOK_SECRET=$(terraform output --raw webhook_secret)
+fi
+
+# Refuse to PATCH the GitHub App with empty values: that would silently break
+# webhook signature validation (the lambda keeps the real secret, GitHub loses it).
+if [ -z "$WEBHOOK_ENDPOINT" ]; then
+  echo "WEBHOOK_ENDPOINT is empty; refusing to update the GitHub App webhook" >&2
+  exit 1
+fi
+
+if [ -z "$WEBHOOK_SECRET" ]; then
+  echo "WEBHOOK_SECRET is empty; refusing to update the GitHub App webhook" >&2
+  exit 1
 fi
 
 ### CREATE JWT TOKEN ###
